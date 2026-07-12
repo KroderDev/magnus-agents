@@ -2,20 +2,22 @@ FROM node:26-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm ci --ignore-scripts
+RUN npm install -g pnpm@11
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY tsconfig.json ./
 COPY src/ ./src/
 
-RUN npx tsc
+RUN pnpm run build
 
 FROM node:26-alpine
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm install -g pnpm@11
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 COPY --from=builder /app/dist/ ./dist/
 COPY personas/ ./personas/
