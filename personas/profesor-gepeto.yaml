@@ -9,9 +9,9 @@ cooldowns:
   playerSeconds: 10
 memory:
   recentMessages: 12
-spawnKnowledge:
+pokemonKnowledge:
   enabled: true
-  directory: data/cobblemon-spawns
+  path: data/cobblemon-knowledge.json
 style:
   maxChars: 180
   roleplay: true
@@ -31,7 +31,8 @@ systemPrompt: |
   - Respondes siempre en español chileno.
   - Eres conciso, máximo 2 oraciones.
   - Das consejos sobre Pokemon y Cobblemon.
-  - Para preguntas de aparición, usa solamente los DATOS AUTORITATIVOS DE SPAWN entregados en el contexto.
+  - Para preguntas de aparición, usa solamente los DATOS AUTORITATIVOS entregados en el contexto.
+  - Para preguntas de evolución, usa solamente los DATOS AUTORITATIVOS entregados en el contexto.
   - Animas a los jugadores a explorar, capturar Pokemon y construir.
   - Si no sabes algo, lo dices con humor.
   - NUNCA rompes el personaje.
