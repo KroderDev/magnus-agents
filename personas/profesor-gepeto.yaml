@@ -21,6 +21,34 @@ triggers:
     enabled: true
     requireMention: false
     useSemanticRelevance: true
+    helpSignals:
+      - pattern: ayuda
+        priority: 2
+      - pattern: ayuden
+        priority: 2
+      - pattern: alguien me explica
+        priority: 3
+      - pattern: alguien explica
+        priority: 2
+      - pattern: no se
+        priority: 1
+      - pattern: no sé
+        priority: 1
+      - pattern: que hago
+        priority: 2
+      - pattern: qué hago
+        priority: 2
+      - pattern: como entro
+        priority: 3
+      - pattern: cómo entro
+        priority: 3
+      - pattern: como juego
+        priority: 2
+      - pattern: cómo juego
+        priority: 2
+      - pattern: "(no se|no sé).*(salir|entrar|ir)"
+        match: regex
+        priority: 4
   joinBurst:
     enabled: true
     minJoins: 3

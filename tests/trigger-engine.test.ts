@@ -17,6 +17,8 @@ const baseConfig: PersonaConfig = {
       enabled: true,
       requireMention: false,
       useSemanticRelevance: true,
+      helpKeywords: [],
+      helpSignals: [],
     },
     joinBurst: {
       enabled: false,
@@ -91,6 +93,43 @@ describe("TriggerEngine", () => {
   it("should mark non-mentioned questions as question candidates when semantic relevance is enabled", () => {
     const engine = new TriggerEngine(baseConfig);
     expect(engine.evaluate(msg("alguien sabe donde pillar hierro"))?.reason).toBe("question-candidate");
+  });
+
+  it("should trigger on configured help keywords without a direct mention", () => {
+    const config: PersonaConfig = {
+      ...baseConfig,
+      triggers: {
+        ...baseConfig.triggers,
+        question: {
+          ...baseConfig.triggers.question,
+          helpSignals: [
+            { pattern: "ayuda", match: "includes", priority: 1 },
+            { pattern: "como entro", match: "includes", priority: 2 },
+          ],
+        },
+      },
+    };
+
+    const engine = new TriggerEngine(config);
+    expect(engine.evaluate(msg("como entro a kanto? ayuda"))?.reason).toBe("help-request");
+  });
+
+  it("should support regex help signals", () => {
+    const config: PersonaConfig = {
+      ...baseConfig,
+      triggers: {
+        ...baseConfig.triggers,
+        question: {
+          ...baseConfig.triggers.question,
+          helpSignals: [
+            { pattern: "(no se|no sé).*(salir|entrar|ir)", match: "regex", priority: 4 },
+          ],
+        },
+      },
+    };
+
+    const engine = new TriggerEngine(config);
+    expect(engine.evaluate(msg("no se salir del lobby"))?.reason).toBe("help-request");
   });
 
   it("should not trigger on regular chat", () => {

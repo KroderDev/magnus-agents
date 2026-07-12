@@ -37,6 +37,8 @@ const baseConfig: PersonaConfig = {
       enabled: true,
       requireMention: false,
       useSemanticRelevance: true,
+      helpKeywords: [],
+      helpSignals: [],
     },
     joinBurst: {
       enabled: false,
