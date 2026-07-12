@@ -16,6 +16,8 @@ export const envSchema = z.object({
 
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
   HEALTH_PORT: z.coerce.number().positive().default(3000),
+  STARTUP_GREETING: z.coerce.boolean().default(false),
+  STARTUP_GREETING_DELAY_MS: z.coerce.number().min(0).default(0),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

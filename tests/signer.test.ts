@@ -28,6 +28,28 @@ describe("MessageSigner", () => {
     expect(verified).toBeNull();
   });
 
+  it("should allow small future clock skew", () => {
+    let now = 1_700_000_000_000;
+    const skewedSigner = new MessageSigner(secret, () => now);
+    const payload = "test-payload";
+    const signed = skewedSigner.sign(payload);
+
+    now -= 4_000;
+
+    expect(skewedSigner.verify(signed)).toBe(payload);
+  });
+
+  it("should reject large future clock skew", () => {
+    let now = 1_700_000_000_000;
+    const skewedSigner = new MessageSigner(secret, () => now);
+    const payload = "test-payload";
+    const signed = skewedSigner.sign(payload);
+
+    now -= 6_000;
+
+    expect(skewedSigner.verify(signed)).toBeNull();
+  });
+
   it("should reject messages with wrong secret", () => {
     const otherSigner = new MessageSigner("different-secret-key");
     const payload = "test-payload";
@@ -52,5 +74,17 @@ describe("MessageSigner", () => {
     const timestamp = Number(parts[1]);
     expect(Number.isFinite(timestamp)).toBe(true);
     expect(Date.now() - timestamp).toBeLessThan(5_000);
+  });
+
+  it("should support a custom clock for signing and verification", () => {
+    let now = 1_700_000_000_000;
+    const skewedSigner = new MessageSigner(secret, () => now);
+    const payload = "test-payload";
+
+    const signed = skewedSigner.sign(payload);
+    expect(skewedSigner.verify(signed)).toBe(payload);
+
+    now += 31_000;
+    expect(skewedSigner.verify(signed)).toBeNull();
   });
 });

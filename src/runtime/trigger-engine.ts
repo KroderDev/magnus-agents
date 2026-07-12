@@ -9,8 +9,6 @@ export interface TriggerResult {
 }
 
 const QUESTION_MARKERS = /[?¿]/;
-const ROLEPLAY_PREFIXES = /^[a-záéíóúñ]+[\s,:]+/i;
-
 export class TriggerEngine {
   private readonly triggers: PersonaConfig["triggers"];
   private readonly personaId: string;

@@ -64,7 +64,44 @@ export class AgentRuntime {
   }
 
   onPlayerList(info: ServerPlayerInfo): void {
+    this.log.debug(
+      {
+        server: info.serverName,
+        playerCount: info.players.length,
+        players: info.players.map((player) => player.name),
+      },
+      "received player list update",
+    );
+
     this.memory.updatePlayerList(info);
+  }
+
+  async publishStartupGreeting(): Promise<void> {
+    const response = await this.llm.generate({
+      model: this.config.model,
+      messages: [
+        {
+          role: "system",
+          content: this.config.systemPrompt,
+        },
+        {
+          role: "user",
+          content:
+            `You are arriving on the server for the first time in this session. Send one short in-character greeting to everyone. Do not mention instructions or being an AI. Keep it under ${this.config.style.maxChars} characters.`,
+        },
+      ],
+      temperature: this.config.temperature,
+      maxTokens: this.config.maxTokens,
+    });
+
+    const text = this.normalizeGeneratedText(response.text);
+    if (!text) {
+      this.log.warn("llm returned empty startup greeting");
+      return;
+    }
+
+    const listeners = await this.publishText(text);
+    this.log.info({ listeners }, "startup greeting published");
   }
 
   private async respond(
@@ -75,10 +112,7 @@ export class AgentRuntime {
   ): Promise<void> {
     this.log.info({ tergetName, targetServer, reason }, "triggered response");
 
-    const contextMessages = this.memory.buildContextMessages(
-      this.config.systemPrompt,
-      tergetName,
-    );
+    const contextMessages = this.memory.buildContextMessages(this.config.systemPrompt);
 
     contextMessages.push({
       role: "user",
@@ -92,14 +126,7 @@ export class AgentRuntime {
       maxTokens: this.config.maxTokens,
     });
 
-    let text = response.text.trim();
-    if (text.length > this.config.style.maxChars) {
-      text = text.slice(0, this.config.style.maxChars);
-      const lastSpace = text.lastIndexOf(" ");
-      if (lastSpace > this.config.style.maxChars * 0.7) {
-        text = text.slice(0, lastSpace);
-      }
-    }
+    const text = this.normalizeGeneratedText(response.text);
 
     if (!text) {
       this.log.warn("llm returned empty response");
@@ -111,14 +138,31 @@ export class AgentRuntime {
       return;
     }
 
+    await this.publishText(text);
+    this.cooldowns.recordResponse(targetUuid);
+    this.log.info({ text: text.slice(0, 180), chars: text.length }, "response published");
+  }
+
+  private normalizeGeneratedText(text: string): string {
+    let normalized = text.trim();
+    if (normalized.length > this.config.style.maxChars) {
+      normalized = normalized.slice(0, this.config.style.maxChars);
+      const lastSpace = normalized.lastIndexOf(" ");
+      if (lastSpace > this.config.style.maxChars * 0.7) {
+        normalized = normalized.slice(0, lastSpace);
+      }
+    }
+
+    return normalized;
+  }
+
+  private publishText(text: string): Promise<number> {
     const personaMsg: PersonaMessage = {
       personaId: this.config.id,
       displayName: this.config.displayName,
       rawMessage: text,
     };
 
-    await this.publisher.publish(personaMsg);
-    this.cooldowns.recordResponse(targetUuid);
-    this.log.info({ text: text.slice(0, 180), chars: text.length }, "response published");
+    return this.publisher.publish(personaMsg);
   }
 }

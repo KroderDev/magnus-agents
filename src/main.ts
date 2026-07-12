@@ -11,6 +11,11 @@ import { PlayerListSubscriber } from "./integrations/magnus/playerlist-subscribe
 import { OpenAICompatibleProvider as LlmProvider } from "./integrations/llm/openai-provider.js";
 import { AgentRuntime } from "./runtime/agent.js";
 import { ActionRegistry } from "./actions/registry.js";
+import { MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL } from "./integrations/magnus/protocol.js";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function main(): Promise<void> {
   loadOptionalDotEnv();
@@ -18,16 +23,43 @@ async function main(): Promise<void> {
   const log = createLogger(env.LOG_LEVEL);
   const config = loadPersonaConfig(env.PERSONA_CONFIG_PATH);
 
-  log.info({ personaId: config.id, displayName: config.displayName }, "starting persona agent");
+  log.info(
+    {
+      personaId: config.id,
+      displayName: config.displayName,
+      redisHost: env.REDIS_HOST,
+      redisPort: env.REDIS_PORT,
+      hasRedisPassword: Boolean(env.REDIS_PASSWORD),
+      startupGreeting: env.STARTUP_GREETING,
+      startupGreetingDelayMs: env.STARTUP_GREETING_DELAY_MS,
+    },
+    "starting persona agent",
+  );
 
+  log.info("creating redis client");
   const redis = createRedisClient({
     host: env.REDIS_HOST,
     port: env.REDIS_PORT,
     password: env.REDIS_PASSWORD || undefined,
+    log: log.child({ component: "redis" }),
   });
 
-  const signer = new MessageSigner(env.MAGNUS_MESSAGE_SIGNING_SECRET);
+  let redisClockOffsetMs = 0;
+  try {
+    const redisNow = await redis.time();
+    redisClockOffsetMs = redisNow - Date.now();
+    log.info({ redisClockOffsetMs }, "measured redis clock offset");
+  } catch (err) {
+    log.warn({ err }, "failed to measure redis clock offset, using local clock");
+  }
 
+  log.debug({ redisClockOffsetMs }, "creating magnus message signer");
+  const signer = new MessageSigner(
+    env.MAGNUS_MESSAGE_SIGNING_SECRET,
+    () => Date.now() + redisClockOffsetMs,
+  );
+
+  log.debug({ baseURL: env.LLM_BASE_URL, model: env.LLM_MODEL }, "creating llm provider");
   const llm = new LlmProvider({
     baseURL: env.LLM_BASE_URL,
     apiKey: env.LLM_API_KEY,
@@ -35,9 +67,13 @@ async function main(): Promise<void> {
     timeoutMs: env.LLM_TIMEOUT_MS,
   });
 
-  const publisher = new ChatPublisher(redis, signer, config.id);
-  const chatSub = new ChatSubscriber(redis, signer);
-  const playerListSub = new PlayerListSubscriber(redis, signer);
+  const publisher = new ChatPublisher(redis, signer, log.child({ component: "chat-publisher" }), config.id);
+  const chatSub = new ChatSubscriber(redis, signer, log.child({ component: "chat-subscriber" }));
+  const playerListSub = new PlayerListSubscriber(
+    redis,
+    signer,
+    log.child({ component: "playerlist-subscriber" }),
+  );
 
   const actionRegistry = new ActionRegistry();
   if (config.actions.enabled) {
@@ -46,15 +82,18 @@ async function main(): Promise<void> {
 
   const agent = new AgentRuntime(config, llm, publisher, log);
 
+  log.info({ channel: MAGNUS_CHAT_CHANNEL }, "subscribing to magnus chat");
   await chatSub.subscribe((msg) => {
     agent.onChat(msg);
   });
 
+  log.info({ channel: MAGNUS_PLAYERLIST_CHANNEL }, "subscribing to magnus player list");
   await playerListSub.subscribe((info) => {
     agent.onPlayerList(info);
   });
 
   const closeHealth = startHealthServer(env.HEALTH_PORT, log);
+  log.info({ healthPort: env.HEALTH_PORT }, "health server started");
 
   const shutdown = async () => {
     log.info("shutting down");
@@ -68,7 +107,30 @@ async function main(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  log.info({ actions: actionRegistry.count, triggers: config.triggers }, "agent ready");
+  log.info(
+    {
+      actions: actionRegistry.count,
+      triggers: config.triggers,
+      subscribedChannels: [MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL],
+      healthPort: env.HEALTH_PORT,
+      logLevel: env.LOG_LEVEL,
+    },
+    "agent ready",
+  );
+
+  if (env.STARTUP_GREETING) {
+    if (env.STARTUP_GREETING_DELAY_MS > 0) {
+      log.info({ startupGreetingDelayMs: env.STARTUP_GREETING_DELAY_MS }, "waiting before startup greeting");
+      await sleep(env.STARTUP_GREETING_DELAY_MS);
+    }
+
+    log.info("generating startup greeting");
+    try {
+      await agent.publishStartupGreeting();
+    } catch (err) {
+      log.error({ err }, "failed to publish startup greeting");
+    }
+  }
 }
 
 main().catch((err) => {

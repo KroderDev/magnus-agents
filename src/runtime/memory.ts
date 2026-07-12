@@ -45,7 +45,7 @@ export class MessageMemory {
     return count;
   }
 
-  buildContextMessages(systemPrompt: string, callerName: string): MemoryEntry[] {
+  buildContextMessages(systemPrompt: string): MemoryEntry[] {
     const entries: MemoryEntry[] = [
       { role: "system", content: systemPrompt },
     ];
