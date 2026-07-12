@@ -38,6 +38,16 @@ export class AgentRuntime {
   }
 
   onChat(msg: ChatMessage): void {
+    this.log.debug(
+      {
+        server: msg.serverName,
+        playerUuid: msg.playerUuid,
+        playerName: msg.playerName,
+        text: msg.rawMessage.slice(0, 180),
+      },
+      "received chat message",
+    );
+
     this.memory.addChatMessage(msg);
 
     const trigger = this.triggers.evaluate(msg);
@@ -72,12 +82,11 @@ export class AgentRuntime {
 
     contextMessages.push({
       role: "user",
-      content: `${tergetName} just messaged you. What do you say?`,
+      content: `${tergetName} just messaged you. What do you say? (max ${this.config.style.maxChars} characters)`,
     });
 
-    const model = this.config.model || "default";
     const response = await this.llm.generate({
-      model,
+      model: this.config.model,
       messages: contextMessages,
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
@@ -110,6 +119,6 @@ export class AgentRuntime {
 
     await this.publisher.publish(personaMsg);
     this.cooldowns.recordResponse(targetUuid);
-    this.log.info({ text: text.slice(0, 80) }, "response published");
+    this.log.info({ text: text.slice(0, 180), chars: text.length }, "response published");
   }
 }
