@@ -73,6 +73,7 @@ export class MessageMemory {
           "Conversation rules:",
           "- Treat the final user block as the only message you are answering right now.",
           "- Use earlier messages only as background context.",
+          "- If the current message refers to an earlier question from the same player, infer that question from recent context and answer it directly instead of asking them to repeat it unless the reference is truly ambiguous.",
           "- Stay grounded in the same server as the current message unless the context clearly requires otherwise.",
           `- Keep the reply under ${maxChars} characters.`,
         ].join("\n"),
@@ -84,11 +85,16 @@ export class MessageMemory {
       messages.push({ role: "system", content: worldState });
     }
 
+    const samePlayerReferences = this.buildSamePlayerReferenceMessage(trigger);
+    if (samePlayerReferences) {
+      messages.push({ role: "system", content: samePlayerReferences });
+    }
+
     const history = this.selectRelevantHistory(trigger);
     if (history.length > 0) {
       messages.push({
         role: "system",
-        content: "Recent relevant conversation follows. These are older messages, not the one you must answer now.",
+        content: "Recent relevant conversation follows. These are older messages, not the one you must answer now, but use them to resolve references like 'eso' or follow-up complaints naturally.",
       });
       messages.push(...history);
     }
@@ -101,7 +107,7 @@ export class MessageMemory {
         `- Player: ${trigger.playerName}`,
         `- Trigger reason: ${reason}`,
         `- Message: ${JSON.stringify(trigger.rawMessage)}`,
-        "Reply in character. Answer this message directly, not an earlier one.",
+        "Reply in character. Answer this message directly, and if it points back to a recent question from the same player, answer that underlying question naturally.",
       ].join("\n"),
     });
 
@@ -158,6 +164,25 @@ export class MessageMemory {
     return selected.map((entry) => this.toLlmMessage(entry));
   }
 
+  private buildSamePlayerReferenceMessage(trigger: ChatMessage): string | null {
+    const recentSamePlayerMessages = this.recentMessages
+      .filter((message) => (
+        message.serverName === trigger.serverName
+        && message.playerUuid === trigger.playerUuid
+        && !this.isSameMessage(message, trigger)
+      ))
+      .slice(-3);
+
+    if (recentSamePlayerMessages.length === 0) {
+      return null;
+    }
+
+    return [
+      "Recent messages from the same player that may clarify references:",
+      ...recentSamePlayerMessages.map((message) => `- ${JSON.stringify(message.rawMessage)}`),
+    ].join("\n");
+  }
+
   private buildWorldStateMessage(trigger: ChatMessage): string | null {
     const serverInfo = this.playerList.get(trigger.serverName);
     const serverPlayers = serverInfo?.players.map((player) => player.name) ?? [];
@@ -190,10 +215,14 @@ export class MessageMemory {
 
   private isCurrentTriggerEntry(entry: MemoryEntry, trigger: ChatMessage): boolean {
     return entry.kind === "chat"
-      && entry.message.timestamp === trigger.timestamp
-      && entry.message.playerUuid === trigger.playerUuid
-      && entry.message.serverName === trigger.serverName
-      && entry.message.rawMessage === trigger.rawMessage;
+      && this.isSameMessage(entry.message, trigger);
+  }
+
+  private isSameMessage(left: ChatMessage, right: ChatMessage): boolean {
+    return left.timestamp === right.timestamp
+      && left.playerUuid === right.playerUuid
+      && left.serverName === right.serverName
+      && left.rawMessage === right.rawMessage;
   }
 
   private entryTimestamp(entry: MemoryEntry): number {

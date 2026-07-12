@@ -45,4 +45,25 @@ describe("MessageMemory", () => {
     expect(messages.some((message) => message.role === "system" && message.content.includes("Players currently visible on lobby: Ash, Misty."))).toBe(true);
     expect(messages.some((message) => message.content.includes("otro server"))).toBe(false);
   });
+
+  it("includes recent same-player references for follow-up complaints or shorthand", () => {
+    const memory = new MessageMemory(6);
+    memory.addChatMessage(chatMessage({ rawMessage: "hazla", timestamp: 1 }));
+    memory.addChatMessage(chatMessage({ rawMessage: "como entro a kanto? ayuda", timestamp: 2 }));
+    memory.addChatMessage(chatMessage({ rawMessage: "aaah profe pq no respondes cuando pregunto eso", timestamp: 3 }));
+
+    const current = chatMessage({ rawMessage: "como entro a kanto? no se salir del lobby", timestamp: 4 });
+    const messages = memory.buildResponseContext("system prompt", current, "question", 120);
+
+    expect(messages.some((message) => (
+      message.role === "system"
+      && message.content.includes("Recent messages from the same player that may clarify references:")
+      && message.content.includes('"como entro a kanto? ayuda"')
+      && message.content.includes('"aaah profe pq no respondes cuando pregunto eso"')
+    ))).toBe(true);
+    expect(messages.some((message) => (
+      message.role === "system"
+      && message.content.includes("infer that question from recent context and answer it directly")
+    ))).toBe(true);
+  });
 });
