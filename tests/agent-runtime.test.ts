@@ -5,6 +5,7 @@ import { AgentRuntime } from "../src/runtime/agent.js";
 import type { LlmProvider } from "../src/integrations/llm/types.js";
 import type { ChatPublisher } from "../src/integrations/magnus/chat-publisher.js";
 import type { ChatMessage, ServerPlayerInfo } from "../src/domain/types.js";
+import { ActionRegistry } from "../src/actions/registry.js";
 
 const baseConfig: PersonaConfig = {
   id: "test-persona",
@@ -31,6 +32,8 @@ function createRuntime(overrides: Partial<PersonaConfig> = {}) {
   });
   const publish = vi.fn().mockResolvedValue(1);
 
+  const actions = new ActionRegistry();
+
   const runtime = new AgentRuntime(
     {
       ...baseConfig,
@@ -43,10 +46,11 @@ function createRuntime(overrides: Partial<PersonaConfig> = {}) {
     },
     { generate },
     { publish } as unknown as ChatPublisher,
+    actions,
     pino({ enabled: false }),
   );
 
-  return { runtime, generate, publish };
+  return { runtime, generate, publish, actions };
 }
 
 function chatMessage(overrides: Partial<ChatMessage>): ChatMessage {
@@ -178,5 +182,30 @@ describe("AgentRuntime chat context", () => {
         && message.content.includes("Players currently visible on lobby: Ash, Misty.")
         && message.content.includes("Total visible players across Magnus heartbeats: 3.")
     ))).toBe(true);
+  });
+
+  it("supports an alternate action route without drafting or publishing chat", async () => {
+    const { runtime, generate, publish, actions } = createRuntime({
+      actions: { enabled: true },
+      triggers: { onMention: true, onQuestion: false, onJoinBurst: false },
+    });
+
+    actions.register({
+      id: "who-is-online",
+      description: "Dummy action for pipeline route tests",
+      execute: async () => ({ success: true, output: "ok" }),
+    });
+
+    runtime.onChat(chatMessage({
+      playerUuid: "uuid-9",
+      playerName: "Gary",
+      rawMessage: "Test Persona action: revisa quien esta online",
+      timestamp: 20,
+    }));
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
   });
 });

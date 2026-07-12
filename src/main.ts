@@ -80,7 +80,7 @@ async function main(): Promise<void> {
     log.warn("actions enabled in config but no actions registered (actions system is not yet implemented)");
   }
 
-  const agent = new AgentRuntime(config, llm, publisher, log);
+  const agent = new AgentRuntime(config, llm, publisher, actionRegistry, log);
 
   log.info({ channel: MAGNUS_CHAT_CHANNEL }, "subscribing to magnus chat");
   await chatSub.subscribe((msg) => {

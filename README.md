@@ -35,9 +35,10 @@ Required env:
 - Built output: `dist/`
 - Persona schema: `src/config/persona.ts`
 - Env schema: `src/config/env.ts`
+- Chat pipeline flow: `docs/chat_pipeline_flow.md`
 
 ## Current Scope
 - Responds to Magnus chat using configurable personas.
 - Tracks cross-server player lists from Magnus heartbeats.
-- Has the beginnings of an action/tool system, but tools are not wired into runtime yet.
-
+- Uses a multi-node chat pipeline with alternate routes for ignore, reply, and future action/tool execution.
+- Has the beginnings of an action/tool system, but action execution is still reserved for future wiring.

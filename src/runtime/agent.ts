@@ -4,30 +4,31 @@ import type { LlmProvider } from "../integrations/llm/types.js";
 import { ChatPublisher } from "../integrations/magnus/chat-publisher.js";
 import { CooldownTracker } from "./cooldowns.js";
 import { MessageMemory } from "./memory.js";
-import { TriggerEngine } from "./trigger-engine.js";
 import { LoopGuard } from "./loop-guard.js";
 import type { Logger } from "pino";
+import type { ActionRegistry } from "../actions/registry.js";
+import { ChatPipeline } from "../pipeline/chat-pipeline.js";
 
 export class AgentRuntime {
   private readonly config: PersonaConfig;
   private readonly llm: LlmProvider;
   private readonly publisher: ChatPublisher;
-  private readonly triggers: TriggerEngine;
   private readonly cooldowns: CooldownTracker;
   private readonly memory: MessageMemory;
   private readonly loopGuard: LoopGuard;
   private readonly log: Logger;
+  private readonly pipeline: ChatPipeline;
 
   constructor(
     config: PersonaConfig,
     llm: LlmProvider,
     publisher: ChatPublisher,
+    actions: ActionRegistry,
     log: Logger,
   ) {
     this.config = config;
     this.llm = llm;
     this.publisher = publisher;
-    this.triggers = new TriggerEngine(config);
     this.cooldowns = new CooldownTracker(
       config.cooldowns.globalSeconds,
       config.cooldowns.playerSeconds,
@@ -35,6 +36,16 @@ export class AgentRuntime {
     this.memory = new MessageMemory(config.memory.recentMessages);
     this.loopGuard = new LoopGuard();
     this.log = log.child({ personaId: config.id });
+    this.pipeline = new ChatPipeline(config, {
+      log: this.log.child({ component: "chat-pipeline" }),
+      llm,
+      publisher,
+      memory: this.memory,
+      cooldowns: this.cooldowns,
+      loopGuard: this.loopGuard,
+      actions,
+      normalizeText: (text, maxChars) => this.normalizeGeneratedText(text, maxChars),
+    });
   }
 
   onChat(msg: ChatMessage): void {
@@ -48,21 +59,17 @@ export class AgentRuntime {
       "received chat message",
     );
 
-    const trigger = this.triggers.evaluate(msg);
-    if (!trigger) {
-      this.memory.addChatMessage(msg);
-      return;
-    }
-
-    if (!this.cooldowns.canRespond(msg.playerUuid)) {
-      this.log.debug({ player: msg.playerName }, "cooldown active, skipping");
-      this.memory.addChatMessage(msg);
-      return;
-    }
-
-    this.respond(msg, trigger.targetUuid, trigger.targetServer, trigger.reason).catch(
-      (err) => this.log.error({ err }, "failed to respond"),
-    );
+    this.pipeline.run(msg).then((state) => {
+      this.log.debug(
+        {
+          route: state.route,
+          stopReason: state.stopReason,
+          diagnostics: state.diagnostics,
+          published: state.publishListeners ?? 0,
+        },
+        "chat pipeline finished",
+      );
+    }).catch((err) => this.log.error({ err }, "failed to run chat pipeline"));
     this.memory.addChatMessage(msg);
   }
 
@@ -108,52 +115,12 @@ export class AgentRuntime {
     this.log.info({ listeners }, "startup greeting published");
   }
 
-  private async respond(
-    msg: ChatMessage,
-    targetUuid: string,
-    targetServer: string,
-    reason: string,
-  ): Promise<void> {
-    this.log.info({ targetName: msg.playerName, targetServer, reason }, "triggered response");
-
-    const contextMessages = this.memory.buildResponseContext(
-      this.config.systemPrompt,
-      msg,
-      reason,
-      this.config.style.maxChars,
-    );
-
-    const response = await this.llm.generate({
-      model: this.config.model,
-      messages: contextMessages,
-      temperature: this.config.temperature,
-      maxTokens: this.config.maxTokens,
-    });
-
-    const text = this.normalizeGeneratedText(response.text);
-
-    if (!text) {
-      this.log.warn("llm returned empty response");
-      return;
-    }
-
-    if (this.loopGuard.isLooping(text)) {
-      this.log.warn("loop detected, suppressing response");
-      return;
-    }
-
-    await this.publishText(text);
-    this.memory.addAssistantMessage(targetServer, text);
-    this.cooldowns.recordResponse(targetUuid);
-    this.log.info({ text: text.slice(0, 180), chars: text.length }, "response published");
-  }
-
-  private normalizeGeneratedText(text: string): string {
+  private normalizeGeneratedText(text: string, maxChars: number = this.config.style.maxChars): string {
     let normalized = text.trim();
-    if (normalized.length > this.config.style.maxChars) {
-      normalized = normalized.slice(0, this.config.style.maxChars);
+    if (normalized.length > maxChars) {
+      normalized = normalized.slice(0, maxChars);
       const lastSpace = normalized.lastIndexOf(" ");
-      if (lastSpace > this.config.style.maxChars * 0.7) {
+      if (lastSpace > maxChars * 0.7) {
         normalized = normalized.slice(0, lastSpace);
       }
     }
