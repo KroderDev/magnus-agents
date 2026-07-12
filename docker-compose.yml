@@ -1,0 +1,33 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  agent:
+    build: .
+    ports:
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      MAGNUS_MESSAGE_SIGNING_SECRET: ${MAGNUS_MESSAGE_SIGNING_SECRET}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-gemma4}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-30000}
+      PERSONA_CONFIG_PATH: ${PERSONA_CONFIG_PATH:-./personas/profesor-gepeto.yaml}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HEALTH_PORT: 3000
+      NODE_ENV: production
+    depends_on:
+      redis:
+        condition: service_healthy

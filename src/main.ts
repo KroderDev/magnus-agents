@@ -1,4 +1,5 @@
 import { loadEnv } from "./config/env.js";
+import { loadOptionalDotEnv } from "./config/dotenv.js";
 import { loadPersonaConfig } from "./config/persona.js";
 import { createLogger } from "./transport/logger.js";
 import { startHealthServer } from "./transport/health.js";
@@ -12,6 +13,7 @@ import { AgentRuntime } from "./runtime/agent.js";
 import { ActionRegistry } from "./actions/registry.js";
 
 async function main(): Promise<void> {
+  loadOptionalDotEnv();
   const env = loadEnv();
   const log = createLogger(env.LOG_LEVEL);
   const config = loadPersonaConfig(env.PERSONA_CONFIG_PATH);
