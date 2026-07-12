@@ -21,6 +21,7 @@ RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 COPY --from=builder /app/dist/ ./dist/
 COPY personas/ ./personas/
+COPY data/ ./data/
 
 ENV NODE_ENV=production
 ENV HEALTH_PORT=3000

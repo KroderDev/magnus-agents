@@ -20,6 +20,7 @@ const baseConfig: PersonaConfig = {
   },
   cooldowns: { globalSeconds: 20, playerSeconds: 60 },
   memory: { recentMessages: 12 },
+  spawnKnowledge: { enabled: false, directory: "data/cobblemon-spawns" },
   style: { maxChars: 40, roleplay: true },
   actions: { enabled: false },
 };

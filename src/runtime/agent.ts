@@ -7,6 +7,7 @@ import { MessageMemory } from "./memory.js";
 import { TriggerEngine } from "./trigger-engine.js";
 import { LoopGuard } from "./loop-guard.js";
 import type { Logger } from "pino";
+import type { SpawnKnowledge } from "./spawn-knowledge.js";
 
 export class AgentRuntime {
   private readonly config: PersonaConfig;
@@ -17,12 +18,14 @@ export class AgentRuntime {
   private readonly memory: MessageMemory;
   private readonly loopGuard: LoopGuard;
   private readonly log: Logger;
+  private readonly spawnKnowledge?: SpawnKnowledge;
 
   constructor(
     config: PersonaConfig,
     llm: LlmProvider,
     publisher: ChatPublisher,
     log: Logger,
+    spawnKnowledge?: SpawnKnowledge,
   ) {
     this.config = config;
     this.llm = llm;
@@ -35,6 +38,7 @@ export class AgentRuntime {
     this.memory = new MessageMemory(config.memory.recentMessages);
     this.loopGuard = new LoopGuard();
     this.log = log.child({ personaId: config.id });
+    this.spawnKnowledge = spawnKnowledge;
   }
 
   onChat(msg: ChatMessage): void {
@@ -58,7 +62,7 @@ export class AgentRuntime {
       return;
     }
 
-    this.respond(trigger.targetUuid, msg.playerName, trigger.targetServer, trigger.reason).catch(
+    this.respond(trigger.targetUuid, msg.playerName, trigger.targetServer, trigger.reason, msg.rawMessage).catch(
       (err) => this.log.error({ err }, "failed to respond"),
     );
   }
@@ -109,10 +113,16 @@ export class AgentRuntime {
     tergetName: string,
     targetServer: string,
     reason: string,
+    question: string,
   ): Promise<void> {
     this.log.info({ tergetName, targetServer, reason }, "triggered response");
 
     const contextMessages = this.memory.buildContextMessages(this.config.systemPrompt);
+
+    const spawnContext = this.spawnKnowledge?.findInQuestion(question);
+    if (spawnContext) {
+      contextMessages.push({ role: "system", content: spawnContext });
+    }
 
     contextMessages.push({
       role: "user",

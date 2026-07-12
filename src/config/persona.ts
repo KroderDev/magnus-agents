@@ -17,6 +17,10 @@ export const personaConfigSchema = z.object({
   memory: z.object({
     recentMessages: z.number().positive().default(12),
   }).default({ recentMessages: 12 }),
+  spawnKnowledge: z.object({
+    enabled: z.boolean().default(false),
+    directory: z.string().min(1).default("data/cobblemon-spawns"),
+  }).default({ enabled: false, directory: "data/cobblemon-spawns" }),
   style: z.object({
     maxChars: z.number().positive().default(180),
     roleplay: z.boolean().default(true),

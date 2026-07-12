@@ -12,6 +12,7 @@ import { OpenAICompatibleProvider as LlmProvider } from "./integrations/llm/open
 import { AgentRuntime } from "./runtime/agent.js";
 import { ActionRegistry } from "./actions/registry.js";
 import { MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL } from "./integrations/magnus/protocol.js";
+import { SpawnKnowledge } from "./runtime/spawn-knowledge.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -80,7 +81,12 @@ async function main(): Promise<void> {
     log.warn("actions enabled in config but no actions registered (actions system is not yet implemented)");
   }
 
-  const agent = new AgentRuntime(config, llm, publisher, log);
+  const spawnKnowledge = config.spawnKnowledge.enabled
+    ? SpawnKnowledge.load(config.spawnKnowledge.directory)
+    : undefined;
+  if (spawnKnowledge) log.info({ species: spawnKnowledge.size }, "loaded Cobblemon spawn knowledge");
+
+  const agent = new AgentRuntime(config, llm, publisher, log, spawnKnowledge);
 
   log.info({ channel: MAGNUS_CHAT_CHANNEL }, "subscribing to magnus chat");
   await chatSub.subscribe((msg) => {
