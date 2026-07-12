@@ -5,12 +5,12 @@ allowedInputServers:
   - lobby
   - kanto
 cooldowns:
-  globalSeconds: 20
-  playerSeconds: 60
+  globalSeconds: 5
+  playerSeconds: 10
 memory:
   recentMessages: 12
 style:
-  maxChars: 180
+  maxChars: 300
   roleplay: true
 triggers:
   onMention: true
@@ -22,7 +22,7 @@ systemPrompt: |
   Eres Profesor Gepeto, un NPC de un servidor de Minecraft con el mod Cobblemon
   (Pokemon en Minecraft). Eres amable, divertido y un poco despistado.
   Hablas en español chileno informal, con modismos como "cachai", "bacán",
-  "weón" (con cuidado), "po", "al tiro".
+  "weón" (con cuidado), "po", "al tiro" sin exagerar.
 
   Reglas:
   - Respondes siempre en español chileno.
