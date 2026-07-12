@@ -1,58 +1,59 @@
 # Magnus Agents
 
-## Package Manager
-- Use `pnpm`. The repo was migrated from npm (note the leftover `package-lock.json`).
-- Node 26 for local/runtime parity (`Dockerfile` uses `node:26-alpine`).
-
-## ESM + TypeScript
-- This is ESM (`"type": "module"`) with `moduleResolution: "NodeNext"`. In `.ts` files, local import specifiers must end in `.js`.
+## Toolchain
+- Use `pnpm`.
+- Use Node 26 locally and in CI/Docker.
+- This repo is ESM with `moduleResolution: "NodeNext"`; local imports in `.ts` files must end in `.js`.
 
 ## Commands
-- `pnpm run dev` — `tsx watch src/main.ts`
-- `pnpm run build` — `tsc` (outputs to `dist/`)
-- `pnpm run start` — `node dist/main.js`
-- `pnpm run typecheck` — `tsc --noEmit`
-- `pnpm test` — `vitest run`
-- Focused test: `npx vitest run tests/<file>.test.ts`
-- Focused test by name: `npx vitest run tests/<file>.test.ts -t "<name>"`
+- `pnpm run dev` - watch `src/main.ts` with `tsx`.
+- `pnpm run build` - compile TypeScript to `dist/`.
+- `pnpm run start` - run `dist/main.js`.
+- `pnpm run lint` - ESLint is configured and used in CI.
+- `pnpm run typecheck` - `tsc --noEmit`.
+- `pnpm test` - run Vitest once.
+- Focus one test file: `npx vitest run tests/<file>.test.ts`
+- Focus one test name: `npx vitest run tests/<file>.test.ts -t "<name>"`
 
 ## Verification
-- Reliable verification today: `pnpm run typecheck` then `pnpm test`.
-- `pnpm run lint` exists but no checked-in root ESLint config — do not assume lint works.
+- Match CI order: `pnpm run lint`, then `pnpm run typecheck`, then `pnpm test`.
 
 ## Source Of Truth
-- Do not edit `dist/`; it is generated from `src/` and gitignored.
-- `tsconfig.json` compiles only `src/**/*.ts` (excludes `tests/`).
-- Runtime entrypoint: `src/main.ts`
-- Persona schema: `src/config/persona.ts`
-- Env validation: `src/config/env.ts`
+- Runtime entrypoint: `src/main.ts`.
+- Env validation: `src/config/env.ts`.
+- Persona schema/loading: `src/config/persona.ts`.
+- Do not edit `dist/`; it is generated and gitignored.
+- `tsconfig.json` compiles only `src/**/*.ts`; tests are excluded from build output.
 
-## Runtime Setup
-- The app reads `process.env` directly — no dotenv loader. `.env.example` is a template only.
-- Required env: `MAGNUS_MESSAGE_SIGNING_SECRET`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `PERSONA_CONFIG_PATH`.
-- Persona configs: `personas/*.yaml`
-- Health endpoint: `GET /` on `HEALTH_PORT` (default 3000), returns `{"status":"ok","uptime":...}`.
+## Runtime Wiring
+- `main.ts` loads `.env` if present via `loadOptionalDotEnv()`, then validates `process.env`.
+- `.env` values only fill missing vars; they do not override existing environment variables.
+- Required env for startup: `MAGNUS_MESSAGE_SIGNING_SECRET`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `PERSONA_CONFIG_PATH`.
+- Optional runtime env that changes behavior: `STARTUP_GREETING` and `STARTUP_GREETING_DELAY_MS`.
+- Persona configs live under `personas/*.yaml`.
+- Health endpoint: `GET /` on `HEALTH_PORT` (default `3000`) and returns JSON with `status` and `uptime`.
 
 ## Magnus Integration
-- Integration is Redis pub/sub (not HTTP). Channels: `magnus:chat` and `magnus:playerlist`.
-- Signed message format: `signature|timestamp|payload` (HMAC-SHA256, base64).
-- Outbound persona chat: `playerUuid = persona:<id>`, `serverName = agent:<personaId>`.
-- `ChatSubscriber` ignores messages with `persona:` UUIDs for loop prevention.
-- Redis client is shared across publish and both subscriptions in `main.ts`.
+- This app integrates with Magnus over Redis pub/sub, not HTTP.
+- Channels used today: `magnus:chat` and `magnus:playerlist`.
+- Signed payload format: `signature|timestamp|payload` using HMAC-SHA256.
+- Outbound persona chat is published as `playerUuid = persona:<id>` and `serverName = agent:<personaId>`.
+- `ChatSubscriber` ignores inbound `persona:` UUIDs to avoid agent echo loops.
+- The agent already consumes Magnus player-list heartbeats; this is the main existing source for read-only tool data.
 
-## Runtime Behavior
-- `TriggerEngine` uses only `allowedInputServers`, `triggers.onMention`, and `triggers.onQuestion`.
-- Cooldowns: global + per-player.
-- Loop guard: suppresses the same normalized reply on the 3rd repeat.
-- LLM context: system prompt + recent chat messages.
+## Current Behavior
+- `TriggerEngine` currently uses only `allowedInputServers`, `triggers.onMention`, and `triggers.onQuestion`.
+- LLM context is system prompt plus recent chat memory.
+- Cooldowns are global plus per-player.
+- Loop guard suppresses the same normalized reply on the third repeat.
+- If persona YAML omits `model`, the LLM provider falls back to env `LLM_MODEL`.
 
-## Stubs / Gotchas
-- `actions.enabled` only logs a warning — no actions are registered yet.
-- `triggers.onJoinBurst` and `style.roleplay` are in the config schema but unused by runtime.
-- `PersonaMessage.targetServers` is defined but unused by publishing/runtime.
-- If persona YAML omits `model`, runtime sends `"default"` to the LLM API instead of env `LLM_MODEL`.
-- Docker build is suspect: `Dockerfile` runs `npm ci` but does not copy `package-lock.json`.
+## Gaps And Gotchas
+- `ActionRegistry` exists, but no actions/tools are wired into runtime yet.
+- `actions.enabled` only produces a warning today.
+- `triggers.onJoinBurst`, `style.roleplay`, and `PersonaMessage.targetServers` exist in schema/types but are currently unused by runtime.
+- There is no end-to-end coverage for `main.ts`, live Redis integration, or real LLM calls.
 
-## Test Scope
-- Existing tests: protocol encode/decode, message signing, cooldowns, trigger evaluation.
-- No tests for `main.ts`, Redis integration, env/persona loading, LLM calls, or Docker.
+## Useful Scripts
+- `scripts/send-test-message.ts` publishes a signed fake player chat message to `magnus:chat` for smoke testing.
+- `scripts/send-chat-message.ts` publishes a signed persona chat message using the same runtime env/config path.
