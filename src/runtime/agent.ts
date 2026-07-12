@@ -48,19 +48,22 @@ export class AgentRuntime {
       "received chat message",
     );
 
-    this.memory.addChatMessage(msg);
-
     const trigger = this.triggers.evaluate(msg);
-    if (!trigger) return;
-
-    if (!this.cooldowns.canRespond(msg.playerUuid)) {
-      this.log.debug({ player: msg.playerName }, "cooldown active, skipping");
+    if (!trigger) {
+      this.memory.addChatMessage(msg);
       return;
     }
 
-    this.respond(trigger.targetUuid, msg.playerName, trigger.targetServer, trigger.reason).catch(
+    if (!this.cooldowns.canRespond(msg.playerUuid)) {
+      this.log.debug({ player: msg.playerName }, "cooldown active, skipping");
+      this.memory.addChatMessage(msg);
+      return;
+    }
+
+    this.respond(msg, trigger.targetUuid, trigger.targetServer, trigger.reason).catch(
       (err) => this.log.error({ err }, "failed to respond"),
     );
+    this.memory.addChatMessage(msg);
   }
 
   onPlayerList(info: ServerPlayerInfo): void {
@@ -101,23 +104,24 @@ export class AgentRuntime {
     }
 
     const listeners = await this.publishText(text);
+    this.memory.addAssistantMessage("startup", text);
     this.log.info({ listeners }, "startup greeting published");
   }
 
   private async respond(
+    msg: ChatMessage,
     targetUuid: string,
-    tergetName: string,
     targetServer: string,
     reason: string,
   ): Promise<void> {
-    this.log.info({ tergetName, targetServer, reason }, "triggered response");
+    this.log.info({ targetName: msg.playerName, targetServer, reason }, "triggered response");
 
-    const contextMessages = this.memory.buildContextMessages(this.config.systemPrompt);
-
-    contextMessages.push({
-      role: "user",
-      content: `${tergetName} just messaged you. What do you say? (max ${this.config.style.maxChars} characters)`,
-    });
+    const contextMessages = this.memory.buildResponseContext(
+      this.config.systemPrompt,
+      msg,
+      reason,
+      this.config.style.maxChars,
+    );
 
     const response = await this.llm.generate({
       model: this.config.model,
@@ -139,6 +143,7 @@ export class AgentRuntime {
     }
 
     await this.publishText(text);
+    this.memory.addAssistantMessage(targetServer, text);
     this.cooldowns.recordResponse(targetUuid);
     this.log.info({ text: text.slice(0, 180), chars: text.length }, "response published");
   }
