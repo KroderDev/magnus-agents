@@ -18,12 +18,8 @@ export interface RedisClient {
   close(): void;
 }
 
-export function createRedisClient(options: {
-  host: string;
-  port: number;
-  password?: string;
-}): RedisClient {
-  const redis: RedisInstance = new IORedis({
+function newConnection(options: { host: string; port: number; password?: string }): RedisInstance {
+  return new IORedis({
     host: options.host,
     port: options.port,
     password: options.password || undefined,
@@ -33,24 +29,34 @@ export function createRedisClient(options: {
       return Math.min(times * 200, 3000);
     },
   });
+}
+
+export function createRedisClient(options: {
+  host: string;
+  port: number;
+  password?: string;
+}): RedisClient {
+  const pub = newConnection(options);
+  const sub = newConnection(options);
 
   return {
     async publish(channel: string, message: string): Promise<number> {
-      return redis.publish(channel, message);
+      return pub.publish(channel, message);
     },
     async subscribe(channel: string, callback: (channel: string, message: string) => void): Promise<void> {
-      await redis.subscribe(channel);
-      redis.on("message", (ch: string, msg: string) => {
+      await sub.subscribe(channel);
+      sub.on("message", (ch: string, msg: string) => {
         if (ch === channel) {
           callback(ch, msg);
         }
       });
     },
     async unsubscribe(channel: string): Promise<void> {
-      await redis.unsubscribe(channel);
+      await sub.unsubscribe(channel);
     },
     close(): void {
-      redis.disconnect();
+      pub.disconnect();
+      sub.disconnect();
     },
   };
 }
