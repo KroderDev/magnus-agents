@@ -22,10 +22,27 @@ export const personaConfigSchema = z.object({
     roleplay: z.boolean().default(true),
   }).default({ maxChars: 180, roleplay: true }),
   triggers: z.object({
-    onMention: z.boolean().default(true),
-    onQuestion: z.boolean().default(false),
-    onJoinBurst: z.boolean().default(false),
-  }).default({ onMention: true }),
+    mention: z.object({
+      enabled: z.boolean().default(true),
+      aliases: z.array(z.string().min(1)).default([]),
+    }).default({ enabled: true, aliases: [] }),
+    question: z.object({
+      enabled: z.boolean().default(false),
+      requireMention: z.boolean().default(false),
+      useSemanticRelevance: z.boolean().default(true),
+    }).default({ enabled: false, requireMention: false, useSemanticRelevance: true }),
+    joinBurst: z.object({
+      enabled: z.boolean().default(false),
+      minJoins: z.number().int().positive().default(3),
+      windowSeconds: z.number().positive().default(20),
+      cooldownSeconds: z.number().positive().default(180),
+    }).default({ enabled: false, minJoins: 3, windowSeconds: 20, cooldownSeconds: 180 }),
+    serverBecomesActive: z.object({
+      enabled: z.boolean().default(false),
+      minPlayers: z.number().int().positive().default(2),
+      cooldownSeconds: z.number().positive().default(300),
+    }).default({ enabled: false, minPlayers: 2, cooldownSeconds: 300 }),
+  }).default({}),
   actions: z.object({
     enabled: z.boolean().default(false),
   }).default({ enabled: false }),

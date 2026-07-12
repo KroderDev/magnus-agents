@@ -42,16 +42,17 @@
 - The agent already consumes Magnus player-list heartbeats; this is the main existing source for read-only tool data.
 
 ## Current Behavior
-- `TriggerEngine` currently uses only `allowedInputServers`, `triggers.onMention`, and `triggers.onQuestion`.
+- `TriggerEngine` currently evaluates `allowedInputServers`, configurable mention aliases, and question relevance gates.
 - LLM context is system prompt plus recent chat memory.
 - Cooldowns are global plus per-player.
 - Loop guard suppresses the same normalized reply on the third repeat.
 - If persona YAML omits `model`, the LLM provider falls back to env `LLM_MODEL`.
+- Proactive persona chat can be triggered from Magnus player-list heartbeats for join bursts and servers becoming active.
 
 ## Gaps And Gotchas
 - `ActionRegistry` exists, but no actions/tools are wired into runtime yet.
 - `actions.enabled` only produces a warning today.
-- `triggers.onJoinBurst`, `style.roleplay`, and `PersonaMessage.targetServers` exist in schema/types but are currently unused by runtime.
+- `style.roleplay` still exists in schema/types but is currently unused by runtime.
 - There is no end-to-end coverage for `main.ts`, live Redis integration, or real LLM calls.
 
 ## Useful Scripts

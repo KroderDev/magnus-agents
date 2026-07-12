@@ -4,6 +4,7 @@ import type { ChatPipelineServices, ChatPipelineState } from "./types.js";
 import { PipelineExecutor } from "./executor.js";
 import { TriggerNode } from "./nodes/trigger-node.js";
 import { GuardNode } from "./nodes/guard-node.js";
+import { QuestionRelevanceNode } from "./nodes/question-relevance-node.js";
 import { DecisionNode } from "./nodes/decision-node.js";
 import { ContextNode } from "./nodes/context-node.js";
 import { ToolPlanningNode } from "./nodes/tool-planning-node.js";
@@ -20,6 +21,7 @@ export class ChatPipeline {
     this.executor = new PipelineExecutor([
       new TriggerNode(new TriggerEngine(persona)),
       new GuardNode(),
+      new QuestionRelevanceNode(),
       new DecisionNode(),
       new ContextNode(),
       new ToolPlanningNode(),

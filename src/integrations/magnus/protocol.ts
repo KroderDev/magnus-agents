@@ -30,6 +30,9 @@ export function decodeChatMessage(raw: string): ChatMessage | null {
       playerName: obj.playerName,
       rawMessage: obj.rawMessage,
       timestamp: typeof obj.timestamp === "number" ? obj.timestamp : Date.now(),
+      targetServers: Array.isArray(obj.targetServers)
+        ? obj.targetServers.map((server: unknown) => String(server))
+        : undefined,
     };
   } catch {
     return null;
@@ -62,5 +65,6 @@ export function buildChatMessage(persona: PersonaMessage, agentServerName: strin
     playerName: persona.displayName,
     rawMessage: persona.rawMessage,
     timestamp: Date.now(),
+    targetServers: persona.targetServers,
   };
 }

@@ -9,6 +9,13 @@ export interface TriggerResult {
 }
 
 const QUESTION_MARKERS = /[?¿]/;
+
+const INTERROGATIVE_PATTERNS = [
+  /\balguien\s+sabe\b/i,
+  /^\s*(como|cómo|donde|dónde|cuando|cuándo|cual|cuál|quien|quién|por\s+que|por\s+qué)\b/i,
+  /\b(se\s+puede|me\s+pueden|me\s+podri[ae]n|saben\s+si)\b/i,
+];
+
 export class TriggerEngine {
   private readonly triggers: PersonaConfig["triggers"];
   private readonly personaId: string;
@@ -27,7 +34,9 @@ export class TriggerEngine {
       return null;
     }
 
-    if (this.triggers.onMention && this.isDirectMention(msg.rawMessage)) {
+    const isMention = this.triggers.mention.enabled && this.isDirectMention(msg.rawMessage);
+
+    if (isMention) {
       return {
         shouldRespond: true,
         reason: "mention",
@@ -36,16 +45,29 @@ export class TriggerEngine {
       };
     }
 
-    if (this.triggers.onQuestion && this.hasQuestionMarker(msg.rawMessage)) {
+    if (!this.triggers.question.enabled || !this.looksLikeQuestion(msg.rawMessage)) {
+      return null;
+    }
+
+    if (this.triggers.question.requireMention && !isMention) {
+      return null;
+    }
+
+    if (isMention || !this.triggers.question.useSemanticRelevance) {
       return {
         shouldRespond: true,
-        reason: "question",
+        reason: isMention ? "question-to-persona" : "question",
         targetUuid: msg.playerUuid,
         targetServer: msg.serverName,
       };
     }
 
-    return null;
+    return {
+      shouldRespond: true,
+      reason: "question-candidate",
+      targetUuid: msg.playerUuid,
+      targetServer: msg.serverName,
+    };
   }
 
   private isServerAllowed(server: string): boolean {
@@ -56,9 +78,13 @@ export class TriggerEngine {
   private isDirectMention(text: string): boolean {
     const lower = text.toLowerCase();
     const nameLower = this.displayName.toLowerCase();
-    const terms = [nameLower, this.personaId, "profe"];
+    const terms = [nameLower, this.personaId, ...this.triggers.mention.aliases.map((alias) => alias.toLowerCase())];
 
     for (const term of terms) {
+      if (!term) {
+        continue;
+      }
+
       if (lower.includes(term)) return true;
       if (lower.startsWith(`@${term}`)) return true;
     }
@@ -66,7 +92,11 @@ export class TriggerEngine {
     return false;
   }
 
-  private hasQuestionMarker(text: string): boolean {
-    return QUESTION_MARKERS.test(text);
+  private looksLikeQuestion(text: string): boolean {
+    if (QUESTION_MARKERS.test(text)) {
+      return true;
+    }
+
+    return INTERROGATIVE_PATTERNS.some((pattern) => pattern.test(text));
   }
 }

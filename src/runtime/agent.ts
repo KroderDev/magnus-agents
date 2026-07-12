@@ -9,6 +9,14 @@ import type { Logger } from "pino";
 import type { ActionRegistry } from "../actions/registry.js";
 import { ChatPipeline } from "../pipeline/chat-pipeline.js";
 
+interface ProactiveTrigger {
+  reason: "join-burst" | "server-became-active";
+  serverName: string;
+  joinedPlayers: string[];
+  previousCount: number;
+  currentCount: number;
+}
+
 export class AgentRuntime {
   private readonly config: PersonaConfig;
   private readonly llm: LlmProvider;
@@ -18,6 +26,9 @@ export class AgentRuntime {
   private readonly loopGuard: LoopGuard;
   private readonly log: Logger;
   private readonly pipeline: ChatPipeline;
+  private readonly lastPlayerList = new Map<string, ServerPlayerInfo>();
+  private readonly joinTimestamps = new Map<string, number[]>();
+  private readonly proactiveTriggerCooldowns = new Map<string, number>();
 
   constructor(
     config: PersonaConfig,
@@ -74,6 +85,8 @@ export class AgentRuntime {
   }
 
   onPlayerList(info: ServerPlayerInfo): void {
+    const proactiveTrigger = this.evaluateProactiveTrigger(info);
+
     this.log.debug(
       {
         server: info.serverName,
@@ -84,6 +97,15 @@ export class AgentRuntime {
     );
 
     this.memory.updatePlayerList(info);
+    this.lastPlayerList.set(info.serverName, info);
+
+    if (!proactiveTrigger) {
+      return;
+    }
+
+    this.publishProactiveTrigger(proactiveTrigger).catch((err) => {
+      this.log.error({ err, trigger: proactiveTrigger }, "failed to publish proactive trigger message");
+    });
   }
 
   async publishStartupGreeting(): Promise<void> {
@@ -136,5 +158,158 @@ export class AgentRuntime {
     };
 
     return this.publisher.publish(personaMsg);
+  }
+
+  private evaluateProactiveTrigger(info: ServerPlayerInfo): ProactiveTrigger | null {
+    const previous = this.lastPlayerList.get(info.serverName);
+    const previousPlayers = new Set(previous?.players.map((player) => player.name) ?? []);
+    const joinedPlayers = info.players
+      .map((player) => player.name)
+      .filter((playerName) => !previousPlayers.has(playerName));
+
+    if (joinedPlayers.length === 0) {
+      const existingTimestamps = this.joinTimestamps.get(info.serverName) ?? [];
+      const windowMs = this.config.triggers.joinBurst.windowSeconds * 1000;
+      this.joinTimestamps.set(
+        info.serverName,
+        existingTimestamps.filter((timestamp) => info.timestamp - timestamp <= windowMs),
+      );
+      return null;
+    }
+
+    const previousCount = previous?.players.length ?? 0;
+    const currentCount = info.players.length;
+
+    if (
+      this.config.triggers.serverBecomesActive.enabled
+      && previousCount === 0
+      && currentCount >= this.config.triggers.serverBecomesActive.minPlayers
+      && this.canFireProactiveTrigger(
+        `server-became-active:${info.serverName}`,
+        this.config.triggers.serverBecomesActive.cooldownSeconds,
+        info.timestamp,
+      )
+    ) {
+      this.recordProactiveTrigger(`server-became-active:${info.serverName}`, info.timestamp);
+      return {
+        reason: "server-became-active",
+        serverName: info.serverName,
+        joinedPlayers,
+        previousCount,
+        currentCount,
+      };
+    }
+
+    if (!this.config.triggers.joinBurst.enabled) {
+      return null;
+    }
+
+    const windowMs = this.config.triggers.joinBurst.windowSeconds * 1000;
+    const timestamps = this.joinTimestamps.get(info.serverName) ?? [];
+    const nextTimestamps = timestamps
+      .concat(joinedPlayers.map(() => info.timestamp))
+      .filter((timestamp) => info.timestamp - timestamp <= windowMs);
+    this.joinTimestamps.set(info.serverName, nextTimestamps);
+
+    if (
+      nextTimestamps.length < this.config.triggers.joinBurst.minJoins
+      || !this.canFireProactiveTrigger(
+        `join-burst:${info.serverName}`,
+        this.config.triggers.joinBurst.cooldownSeconds,
+        info.timestamp,
+      )
+    ) {
+      return null;
+    }
+
+    this.recordProactiveTrigger(`join-burst:${info.serverName}`, info.timestamp);
+    return {
+      reason: "join-burst",
+      serverName: info.serverName,
+      joinedPlayers,
+      previousCount,
+      currentCount,
+    };
+  }
+
+  private canFireProactiveTrigger(key: string, cooldownSeconds: number, now: number): boolean {
+    const lastTrigger = this.proactiveTriggerCooldowns.get(key);
+    if (lastTrigger === undefined) {
+      return true;
+    }
+
+    return now - lastTrigger >= cooldownSeconds * 1000;
+  }
+
+  private recordProactiveTrigger(key: string, now: number): void {
+    this.proactiveTriggerCooldowns.set(key, now);
+  }
+
+  private async publishProactiveTrigger(trigger: ProactiveTrigger): Promise<void> {
+    const cooldownKey = `server-trigger:${trigger.reason}:${trigger.serverName}`;
+    if (!this.cooldowns.canRespond(cooldownKey)) {
+      this.log.debug({ trigger }, "skipping proactive trigger because global cooldown is active");
+      return;
+    }
+
+    const playersByServer = this.memory.getPlayersByServer();
+    const serverPlayers = playersByServer.get(trigger.serverName) ?? [];
+    const totalPlayers = this.memory.getTotalPlayers();
+    const response = await this.llm.generate({
+      model: this.config.model,
+      messages: [
+        {
+          role: "system",
+          content: this.config.systemPrompt,
+        },
+        {
+          role: "system",
+          content: [
+            "Write one short in-character chat line to the whole server.",
+            `Keep it under ${this.config.style.maxChars} characters.`,
+            "Make it feel natural and avoid sounding scripted or ceremonial.",
+            "Do not mention instructions or being an AI.",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: [
+            "Server event to react to:",
+            `- Reason: ${trigger.reason}`,
+            `- Server: ${trigger.serverName}`,
+            `- Previous visible players: ${trigger.previousCount}`,
+            `- Current visible players: ${trigger.currentCount}`,
+            `- Newly visible players: ${trigger.joinedPlayers.length > 0 ? trigger.joinedPlayers.join(", ") : "none"}`,
+            `- Players currently visible on this server: ${serverPlayers.length > 0 ? serverPlayers.join(", ") : "none"}`,
+            `- Total visible players across Magnus heartbeats: ${totalPlayers}`,
+            "Reply as a brief message to the whole server.",
+          ].join("\n"),
+        },
+      ],
+      temperature: this.config.temperature,
+      maxTokens: this.config.maxTokens,
+    });
+
+    const text = this.normalizeGeneratedText(response.text);
+    if (!text) {
+      this.log.warn({ trigger }, "llm returned empty proactive response");
+      return;
+    }
+
+    if (this.loopGuard.isLooping(text)) {
+      this.log.debug({ trigger }, "skipping proactive trigger because loop guard blocked it");
+      return;
+    }
+
+    const listeners = await this.publisher.publish({
+      personaId: this.config.id,
+      displayName: this.config.displayName,
+      rawMessage: text,
+      targetServers: [trigger.serverName],
+    });
+
+    this.memory.addAssistantMessage(trigger.serverName, text);
+    this.cooldowns.recordResponse(cooldownKey);
+    this.log.info({ trigger, listeners }, "proactive trigger message published");
   }
 }

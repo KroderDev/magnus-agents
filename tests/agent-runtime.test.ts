@@ -7,6 +7,19 @@ import type { ChatPublisher } from "../src/integrations/magnus/chat-publisher.js
 import type { ChatMessage, ServerPlayerInfo } from "../src/domain/types.js";
 import { ActionRegistry } from "../src/actions/registry.js";
 
+type PersonaOverrides = Partial<Omit<PersonaConfig, "triggers" | "cooldowns" | "memory" | "style" | "actions">> & {
+  triggers?: Partial<{
+    mention: Partial<PersonaConfig["triggers"]["mention"]>;
+    question: Partial<PersonaConfig["triggers"]["question"]>;
+    joinBurst: Partial<PersonaConfig["triggers"]["joinBurst"]>;
+    serverBecomesActive: Partial<PersonaConfig["triggers"]["serverBecomesActive"]>;
+  }>;
+  cooldowns?: Partial<PersonaConfig["cooldowns"]>;
+  memory?: Partial<PersonaConfig["memory"]>;
+  style?: Partial<PersonaConfig["style"]>;
+  actions?: Partial<PersonaConfig["actions"]>;
+};
+
 const baseConfig: PersonaConfig = {
   id: "test-persona",
   displayName: "Test Persona",
@@ -16,9 +29,26 @@ const baseConfig: PersonaConfig = {
   maxTokens: 64,
   allowedInputServers: ["*"],
   triggers: {
-    onMention: true,
-    onQuestion: true,
-    onJoinBurst: false,
+    mention: {
+      enabled: true,
+      aliases: [],
+    },
+    question: {
+      enabled: true,
+      requireMention: false,
+      useSemanticRelevance: true,
+    },
+    joinBurst: {
+      enabled: false,
+      minJoins: 3,
+      windowSeconds: 20,
+      cooldownSeconds: 180,
+    },
+    serverBecomesActive: {
+      enabled: false,
+      minPlayers: 2,
+      cooldownSeconds: 300,
+    },
   },
   cooldowns: { globalSeconds: 20, playerSeconds: 60 },
   memory: { recentMessages: 12 },
@@ -26,7 +56,7 @@ const baseConfig: PersonaConfig = {
   actions: { enabled: false },
 };
 
-function createRuntime(overrides: Partial<PersonaConfig> = {}) {
+function createRuntime(overrides: PersonaOverrides = {}) {
   const generate = vi.fn<LlmProvider["generate"]>().mockResolvedValue({
     text: "Saludos, cabros curiosos, ya llego el profe a meter ruido en el server.",
   });
@@ -38,7 +68,26 @@ function createRuntime(overrides: Partial<PersonaConfig> = {}) {
     {
       ...baseConfig,
       ...overrides,
-      triggers: { ...baseConfig.triggers, ...overrides.triggers },
+      triggers: {
+        ...baseConfig.triggers,
+        ...overrides.triggers,
+        mention: {
+          ...baseConfig.triggers.mention,
+          ...overrides.triggers?.mention,
+        },
+        question: {
+          ...baseConfig.triggers.question,
+          ...overrides.triggers?.question,
+        },
+        joinBurst: {
+          ...baseConfig.triggers.joinBurst,
+          ...overrides.triggers?.joinBurst,
+        },
+        serverBecomesActive: {
+          ...baseConfig.triggers.serverBecomesActive,
+          ...overrides.triggers?.serverBecomesActive,
+        },
+      },
       cooldowns: { ...baseConfig.cooldowns, ...overrides.cooldowns },
       memory: { ...baseConfig.memory, ...overrides.memory },
       style: { ...baseConfig.style, ...overrides.style },
@@ -102,7 +151,10 @@ describe("AgentRuntime startup greeting", () => {
 describe("AgentRuntime chat context", () => {
   it("frames the current trigger explicitly and keeps unrelated server chat out of history", async () => {
     const { runtime, generate } = createRuntime({
-      triggers: { onMention: true, onQuestion: false, onJoinBurst: false },
+      triggers: {
+        mention: { enabled: true },
+        question: { enabled: false },
+      },
     });
 
     runtime.onChat(chatMessage({
@@ -144,7 +196,10 @@ describe("AgentRuntime chat context", () => {
 
   it("includes assistant history and player-list world state in later responses", async () => {
     const { runtime, generate, publish } = createRuntime({
-      triggers: { onMention: true, onQuestion: false, onJoinBurst: false },
+      triggers: {
+        mention: { enabled: true },
+        question: { enabled: false },
+      },
       cooldowns: { globalSeconds: 0.001, playerSeconds: 0.001 },
     });
 
@@ -187,7 +242,10 @@ describe("AgentRuntime chat context", () => {
   it("supports an alternate action route without drafting or publishing chat", async () => {
     const { runtime, generate, publish, actions } = createRuntime({
       actions: { enabled: true },
-      triggers: { onMention: true, onQuestion: false, onJoinBurst: false },
+      triggers: {
+        mention: { enabled: true },
+        question: { enabled: false },
+      },
     });
 
     actions.register({
@@ -207,5 +265,90 @@ describe("AgentRuntime chat context", () => {
 
     expect(generate).not.toHaveBeenCalled();
     expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("runs semantic relevance checks for non-mentioned questions before replying", async () => {
+    const { runtime, generate, publish } = createRuntime({
+      cooldowns: { globalSeconds: 0.001, playerSeconds: 0.001 },
+    });
+
+    generate.mockImplementation(async (request) => {
+      const finalMessage = request.messages[request.messages.length - 1]?.content ?? "";
+      if (finalMessage.includes("Question relevance check:")) {
+        return { text: "relevant" };
+      }
+
+      return { text: "Te sirve ir por hierro a las cuevas del spawn primero." };
+    });
+
+    runtime.onChat(chatMessage({
+      rawMessage: "alguien sabe donde pillar hierro",
+      timestamp: 30,
+    }));
+
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
+
+    expect(generate.mock.calls[0]?.[0].messages.at(-1)?.content).toContain("Question relevance check:");
+    expect(generate.mock.calls[1]?.[0].messages.at(-1)?.content).toContain('Message: "alguien sabe donde pillar hierro"');
+  });
+
+  it("publishes a proactive join burst message to the affected server", async () => {
+    const { runtime, generate, publish } = createRuntime({
+      cooldowns: { globalSeconds: 0.001, playerSeconds: 0.001 },
+      triggers: {
+        question: { enabled: false },
+        joinBurst: {
+          enabled: true,
+          minJoins: 3,
+          windowSeconds: 20,
+          cooldownSeconds: 180,
+        },
+      },
+    });
+
+    runtime.onPlayerList(playerList("lobby", ["Ash"], 1000));
+    runtime.onPlayerList(playerList("lobby", ["Ash", "Misty"], 2000));
+    runtime.onPlayerList(playerList("lobby", ["Ash", "Misty", "Brock"], 3000));
+
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
+
+    expect(generate.mock.calls[0]?.[0].messages.at(-1)?.content).toContain("Reason: join-burst");
+    expect(publish).toHaveBeenCalledWith({
+      personaId: baseConfig.id,
+      displayName: baseConfig.displayName,
+      rawMessage: "Saludos, cabros curiosos, ya llego el",
+      targetServers: ["lobby"],
+    });
+  });
+
+  it("publishes a proactive server activation message when a server comes alive", async () => {
+    const { runtime, generate, publish } = createRuntime({
+      cooldowns: { globalSeconds: 0.001, playerSeconds: 0.001 },
+      triggers: {
+        question: { enabled: false },
+        joinBurst: { enabled: false },
+        serverBecomesActive: {
+          enabled: true,
+          minPlayers: 2,
+          cooldownSeconds: 300,
+        },
+      },
+    });
+
+    runtime.onPlayerList(playerList("kanto", [], 1000));
+    runtime.onPlayerList(playerList("kanto", ["Ash", "Misty"], 2000));
+
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
+
+    expect(generate.mock.calls[0]?.[0].messages.at(-1)?.content).toContain("Reason: server-became-active");
+    expect(publish).toHaveBeenCalledWith({
+      personaId: baseConfig.id,
+      displayName: baseConfig.displayName,
+      rawMessage: "Saludos, cabros curiosos, ya llego el",
+      targetServers: ["kanto"],
+    });
   });
 });

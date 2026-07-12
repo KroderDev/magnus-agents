@@ -4,6 +4,7 @@ export interface ChatMessage {
   playerName: string;
   rawMessage: string;
   timestamp: number;
+  targetServers?: string[];
 }
 
 export interface PlayerEntry {

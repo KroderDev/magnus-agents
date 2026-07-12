@@ -29,6 +29,7 @@ export class ChatPublisher {
       {
         channel: MAGNUS_CHAT_CHANNEL,
         server: msg.serverName,
+        targetServers: msg.targetServers,
         playerUuid: msg.playerUuid,
         playerName: msg.playerName,
         text: msg.rawMessage.slice(0, 180),
