@@ -70,4 +70,21 @@ describe("persona config schema", () => {
       { pattern: "(no se|no sé).*(salir|entrar|ir)", match: "regex", priority: 4 },
     ]);
   });
+
+  it("fills action policy defaults", () => {
+    const result = personaConfigSchema.parse({
+      ...baseConfig,
+      actions: {
+        enabled: true,
+      },
+    });
+
+    expect(result.actions).toEqual({
+      enabled: true,
+      allowed: ["*"],
+      mode: "auto",
+      maxCallsPerMessage: 1,
+      readOnlyOnly: true,
+    });
+  });
 });

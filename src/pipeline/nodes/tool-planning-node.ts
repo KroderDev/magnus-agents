@@ -1,4 +1,5 @@
 import type { PipelineNode, PipelineNodeResult } from "../types.js";
+import { isActionAllowed } from "../../actions/intent.js";
 
 export class ToolPlanningNode implements PipelineNode {
   readonly id = "tool-planning";
@@ -12,7 +13,9 @@ export class ToolPlanningNode implements PipelineNode {
       return { signal: "continue" };
     }
 
-    state.toolCandidates = services.actions.list();
+    state.toolCandidates = services.actions
+      .list()
+      .filter((action) => isActionAllowed(action, state.persona.actions));
     return { signal: "continue" };
   }
 }

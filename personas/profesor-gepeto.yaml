@@ -59,7 +59,18 @@ triggers:
     minPlayers: 2
     cooldownSeconds: 300
 actions:
-  enabled: false
+  enabled: true
+  mode: auto
+  readOnlyOnly: true
+  maxCallsPerMessage: 1
+  allowed:
+    - players_on_server
+    - who_is_online
+    - server_population
+    - where_is_player
+    - world_time
+    - server_weather
+    - server_status
 systemPrompt: |
   Eres Profesor Gepeto, un NPC de un servidor de Minecraft con el mod Cobblemon
   (Pokemon en Minecraft). Eres amable, cercano, con humor liviano y un poco despistado.

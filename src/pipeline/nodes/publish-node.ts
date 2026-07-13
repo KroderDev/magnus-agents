@@ -20,6 +20,7 @@ export class PublishNode implements PipelineNode {
       personaId: state.persona.id,
       displayName: state.persona.displayName,
       rawMessage: state.finalText,
+      targetServers: [state.trigger.targetServer],
     });
     services.memory.addAssistantMessage(state.trigger.targetServer, state.finalText);
     services.cooldowns.recordResponse(state.trigger.targetUuid);

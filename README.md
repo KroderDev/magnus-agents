@@ -6,6 +6,7 @@ This runtime listens to Magnus Redis channels, decides when a persona should res
 
 ## What It Uses
 - Magnus Redis pub/sub channels: `magnus:chat` and `magnus:playerlist`
+- Optional Magnus server-state channel: `magnus:serverstate`
 - OpenAI-compatible chat completion API
 - Persona YAML config in `personas/`
 
@@ -40,5 +41,6 @@ Required env:
 ## Current Scope
 - Responds to Magnus chat using configurable personas.
 - Tracks cross-server player lists from Magnus heartbeats.
-- Uses a multi-node chat pipeline with alternate routes for ignore, reply, and future action/tool execution.
-- Has the beginnings of an action/tool system, but action execution is still reserved for future wiring.
+- Tracks read-only server/world facts from Magnus server-state heartbeats.
+- Uses a multi-node chat pipeline with alternate routes for ignore, reply, and read-only action/tool execution.
+- Supports local read-only actions for online players, server population, player lookup, world time, weather, and server status.

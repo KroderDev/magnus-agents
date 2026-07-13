@@ -18,6 +18,24 @@ export interface ServerPlayerInfo {
   timestamp: number;
 }
 
+export interface WorldStateInfo {
+  dimension: string;
+  timeOfDay: number;
+  dayNumber: number;
+  phase: string;
+  isDay: boolean;
+  isRaining: boolean;
+  isThundering: boolean;
+}
+
+export interface ServerStateInfo {
+  serverName: string;
+  playerCount: number;
+  maxPlayers: number;
+  worlds: WorldStateInfo[];
+  timestamp: number;
+}
+
 export interface PersonaMessage {
   personaId: string;
   displayName: string;

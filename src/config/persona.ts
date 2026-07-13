@@ -92,7 +92,11 @@ export const personaConfigSchema = z.object({
   triggers: triggerConfigSchema.default({}),
   actions: z.object({
     enabled: z.boolean().default(false),
-  }).default({ enabled: false }),
+    allowed: z.array(z.string().min(1)).default(["*"]),
+    mode: z.enum(["off", "auto", "explicit"]).default("auto"),
+    maxCallsPerMessage: z.number().int().positive().default(1),
+    readOnlyOnly: z.boolean().default(true),
+  }).default({ enabled: false, allowed: ["*"], mode: "auto", maxCallsPerMessage: 1, readOnlyOnly: true }),
 });
 
 export type PersonaConfig = z.infer<typeof personaConfigSchema>;
