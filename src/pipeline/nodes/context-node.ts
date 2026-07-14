@@ -18,6 +18,11 @@ export class ContextNode implements PipelineNode {
       state.persona.style.maxChars,
     );
 
+    const knowledgeContext = services.knowledge?.findRelevant(state.input.rawMessage);
+    if (knowledgeContext) {
+      state.contextMessages.splice(-1, 0, { role: "system", content: knowledgeContext });
+    }
+
     return { signal: "continue" };
   }
 }

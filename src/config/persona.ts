@@ -85,6 +85,15 @@ export const personaConfigSchema = z.object({
   memory: z.object({
     recentMessages: z.number().positive().default(12),
   }).default({ recentMessages: 12 }),
+  knowledge: z.object({
+    enabled: z.boolean().default(false),
+    path: z.string().min(1).optional(),
+    maxResults: z.number().int().positive().default(3),
+    maxContextChars: z.number().int().positive().default(4000),
+  }).refine((knowledge) => !knowledge.enabled || knowledge.path !== undefined, {
+    message: "path is required when knowledge is enabled",
+    path: ["path"],
+  }).default({ enabled: false, maxResults: 3, maxContextChars: 4000 }),
   style: z.object({
     maxChars: z.number().positive().default(180),
     roleplay: z.boolean().default(true),
