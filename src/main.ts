@@ -12,7 +12,7 @@ import { OpenAICompatibleProvider as LlmProvider } from "./integrations/llm/open
 import { AgentRuntime } from "./runtime/agent.js";
 import { ActionRegistry } from "./actions/registry.js";
 import { MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL } from "./integrations/magnus/protocol.js";
-import { PokemonKnowledge } from "./runtime/pokemon-knowledge.js";
+import { KnowledgeBase } from "./runtime/knowledge-base.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -81,12 +81,15 @@ async function main(): Promise<void> {
     log.warn("actions enabled in config but no actions registered (actions system is not yet implemented)");
   }
 
-  const pokemonKnowledge = config.pokemonKnowledge.enabled
-    ? PokemonKnowledge.load(config.pokemonKnowledge.path)
+  const knowledge = config.knowledge.enabled && config.knowledge.path
+    ? KnowledgeBase.load(config.knowledge.path, {
+        maxResults: config.knowledge.maxResults,
+        maxContextChars: config.knowledge.maxContextChars,
+      })
     : undefined;
-  if (pokemonKnowledge) log.info({ species: pokemonKnowledge.size }, "loaded Cobblemon knowledge");
+  if (knowledge) log.info({ entries: knowledge.size }, "loaded agent knowledge");
 
-  const agent = new AgentRuntime(config, llm, publisher, log, pokemonKnowledge);
+  const agent = new AgentRuntime(config, llm, publisher, log, knowledge);
 
   log.info({ channel: MAGNUS_CHAT_CHANNEL }, "subscribing to magnus chat");
   await chatSub.subscribe((msg) => {

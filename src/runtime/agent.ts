@@ -7,7 +7,7 @@ import { MessageMemory } from "./memory.js";
 import { TriggerEngine } from "./trigger-engine.js";
 import { LoopGuard } from "./loop-guard.js";
 import type { Logger } from "pino";
-import type { PokemonKnowledge } from "./pokemon-knowledge.js";
+import type { KnowledgeBase } from "./knowledge-base.js";
 
 export class AgentRuntime {
   private readonly config: PersonaConfig;
@@ -18,14 +18,14 @@ export class AgentRuntime {
   private readonly memory: MessageMemory;
   private readonly loopGuard: LoopGuard;
   private readonly log: Logger;
-  private readonly pokemonKnowledge?: PokemonKnowledge;
+  private readonly knowledge?: KnowledgeBase;
 
   constructor(
     config: PersonaConfig,
     llm: LlmProvider,
     publisher: ChatPublisher,
     log: Logger,
-    pokemonKnowledge?: PokemonKnowledge,
+    knowledge?: KnowledgeBase,
   ) {
     this.config = config;
     this.llm = llm;
@@ -38,7 +38,7 @@ export class AgentRuntime {
     this.memory = new MessageMemory(config.memory.recentMessages);
     this.loopGuard = new LoopGuard();
     this.log = log.child({ personaId: config.id });
-    this.pokemonKnowledge = pokemonKnowledge;
+    this.knowledge = knowledge;
   }
 
   onChat(msg: ChatMessage): void {
@@ -119,9 +119,9 @@ export class AgentRuntime {
 
     const contextMessages = this.memory.buildContextMessages(this.config.systemPrompt);
 
-    const pokemonContext = this.pokemonKnowledge?.findInQuestion(question);
-    if (pokemonContext) {
-      contextMessages.push({ role: "system", content: pokemonContext });
+    const knowledgeContext = this.knowledge?.findRelevant(question);
+    if (knowledgeContext) {
+      contextMessages.push({ role: "system", content: knowledgeContext });
     }
 
     contextMessages.push({

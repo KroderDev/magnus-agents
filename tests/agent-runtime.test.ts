@@ -20,7 +20,7 @@ const baseConfig: PersonaConfig = {
   },
   cooldowns: { globalSeconds: 20, playerSeconds: 60 },
   memory: { recentMessages: 12 },
-  pokemonKnowledge: { enabled: false, path: "data/cobblemon-knowledge.json" },
+  knowledge: { enabled: false, maxResults: 3, maxContextChars: 4000 },
   style: { maxChars: 40, roleplay: true },
   actions: { enabled: false },
 };
