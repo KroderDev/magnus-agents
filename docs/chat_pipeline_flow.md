@@ -5,7 +5,7 @@ The runtime now uses an ordered multi-node chat pipeline instead of a single har
 ## Routes
 - `ignore`: stop early without generating chat
 - `reply`: generate and publish a persona message
-- `action`: reserve the request for future tool/action execution
+- `action`: execute one allowed read-only local action, then summarize the result as a persona reply
 
 ## Flowchart
 
@@ -21,7 +21,8 @@ flowchart TD
     D -->|action| F[Tool Planning Node]
     E --> F
     F -->|action route| G[Action Route Node]
-    G --> J[Reserved for future tool execution]
+    G --> J[Execute allowed read-only action]
+    J --> H
     F -->|reply route| H[Draft Node]
     H --> K[Verify Node]
     K -->|fail| I
@@ -33,5 +34,5 @@ flowchart TD
 - `TriggerNode` still uses the existing trigger heuristics from `TriggerEngine`.
 - `GuardNode` handles deterministic skips before any LLM call.
 - `ContextNode` builds structured context from chat memory and Magnus player-list heartbeats.
-- `ToolPlanningNode` exposes action candidates when persona actions are enabled.
-- `ActionRouteNode` is currently a stubbed alternate route so the pipeline can grow without another architecture rewrite.
+- `ToolPlanningNode` exposes allowed action candidates when persona actions are enabled.
+- `ActionRouteNode` executes one deterministic local action and turns the result into reply context.

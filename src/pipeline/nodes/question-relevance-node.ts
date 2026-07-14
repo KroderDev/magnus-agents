@@ -7,6 +7,10 @@ export class QuestionRelevanceNode implements PipelineNode {
     state: Parameters<PipelineNode["run"]>[0],
     services: Parameters<PipelineNode["run"]>[1],
   ): Promise<PipelineNodeResult> {
+    if (state.route === "action") {
+      return { signal: "continue" };
+    }
+
     if (state.trigger?.reason !== "question-candidate") {
       return { signal: "continue" };
     }

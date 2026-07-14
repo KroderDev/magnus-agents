@@ -1,12 +1,14 @@
-import type { ChatMessage, PersonaMessage, ServerPlayerInfo } from "../domain/types.js";
+import type { ChatMessage, PersonaMessage, ServerPlayerInfo, ServerStateInfo } from "../domain/types.js";
 import type { PersonaConfig } from "../config/persona.js";
 import type { LlmProvider } from "../integrations/llm/types.js";
 import { ChatPublisher } from "../integrations/magnus/chat-publisher.js";
 import { CooldownTracker } from "./cooldowns.js";
 import { MessageMemory } from "./memory.js";
 import { LoopGuard } from "./loop-guard.js";
+import { ServerStateMemory } from "./server-state-memory.js";
 import type { Logger } from "pino";
 import type { ActionRegistry } from "../actions/registry.js";
+import { registerBuiltinActions } from "../actions/builtin.js";
 import { ChatPipeline } from "../pipeline/chat-pipeline.js";
 
 interface ProactiveTrigger {
@@ -23,6 +25,7 @@ export class AgentRuntime {
   private readonly publisher: ChatPublisher;
   private readonly cooldowns: CooldownTracker;
   private readonly memory: MessageMemory;
+  private readonly serverStateMemory: ServerStateMemory;
   private readonly loopGuard: LoopGuard;
   private readonly log: Logger;
   private readonly pipeline: ChatPipeline;
@@ -45,8 +48,12 @@ export class AgentRuntime {
       config.cooldowns.playerSeconds,
     );
     this.memory = new MessageMemory(config.memory.recentMessages);
+    this.serverStateMemory = new ServerStateMemory();
     this.loopGuard = new LoopGuard();
     this.log = log.child({ personaId: config.id });
+    if (config.actions.enabled) {
+      registerBuiltinActions(actions, this.memory, this.serverStateMemory);
+    }
     this.pipeline = new ChatPipeline(config, {
       log: this.log.child({ component: "chat-pipeline" }),
       llm,
@@ -57,6 +64,19 @@ export class AgentRuntime {
       actions,
       normalizeText: (text, maxChars) => this.normalizeGeneratedText(text, maxChars),
     });
+  }
+
+  onServerState(info: ServerStateInfo): void {
+    this.serverStateMemory.update(info);
+    this.log.debug(
+      {
+        server: info.serverName,
+        playerCount: info.playerCount,
+        maxPlayers: info.maxPlayers,
+        worlds: info.worlds.map((world) => ({ dimension: world.dimension, phase: world.phase })),
+      },
+      "received server state update",
+    );
   }
 
   onChat(msg: ChatMessage): void {

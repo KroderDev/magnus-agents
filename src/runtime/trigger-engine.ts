@@ -45,12 +45,25 @@ export class TriggerEngine {
       };
     }
 
-    if (!this.triggers.question.enabled || !this.looksLikeQuestion(msg.rawMessage)) {
+    const matchedHelpSignal = this.matchHelpSignal(msg.rawMessage);
+    const isHelpRequest = Boolean(matchedHelpSignal);
+    const isQuestion = this.looksLikeQuestion(msg.rawMessage);
+
+    if (!this.triggers.question.enabled || (!isQuestion && !isHelpRequest)) {
       return null;
     }
 
     if (this.triggers.question.requireMention && !isMention) {
       return null;
+    }
+
+    if (isHelpRequest) {
+      return {
+        shouldRespond: true,
+        reason: isMention ? "help-to-persona" : "help-request",
+        targetUuid: msg.playerUuid,
+        targetServer: msg.serverName,
+      };
     }
 
     if (isMention || !this.triggers.question.useSemanticRelevance) {
@@ -98,5 +111,34 @@ export class TriggerEngine {
     }
 
     return INTERROGATIVE_PATTERNS.some((pattern) => pattern.test(text));
+  }
+
+  private matchHelpSignal(text: string): { pattern: string; match: "includes" | "regex"; priority: number } | null {
+    const lower = text.toLowerCase();
+    let bestMatch: { pattern: string; match: "includes" | "regex"; priority: number } | null = null;
+
+    for (const signal of this.triggers.question.helpSignals) {
+      const isMatch = signal.match === "regex"
+        ? this.matchesRegex(signal.pattern, text)
+        : lower.includes(signal.pattern.toLowerCase());
+
+      if (!isMatch) {
+        continue;
+      }
+
+      if (!bestMatch || signal.priority > bestMatch.priority) {
+        bestMatch = signal;
+      }
+    }
+
+    return bestMatch;
+  }
+
+  private matchesRegex(pattern: string, text: string): boolean {
+    try {
+      return new RegExp(pattern, "i").test(text);
+    } catch {
+      return false;
+    }
   }
 }

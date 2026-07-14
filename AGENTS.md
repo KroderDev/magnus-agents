@@ -35,11 +35,11 @@
 
 ## Magnus Integration
 - This app integrates with Magnus over Redis pub/sub, not HTTP.
-- Channels used today: `magnus:chat` and `magnus:playerlist`.
+- Channels used today: `magnus:chat`, `magnus:playerlist`, and `magnus:serverstate`.
 - Signed payload format: `signature|timestamp|payload` using HMAC-SHA256.
 - Outbound persona chat is published as `playerUuid = persona:<id>` and `serverName = agent:<personaId>`.
 - `ChatSubscriber` ignores inbound `persona:` UUIDs to avoid agent echo loops.
-- The agent already consumes Magnus player-list heartbeats; this is the main existing source for read-only tool data.
+- The agent consumes Magnus player-list and server-state heartbeats; these are the main sources for read-only tool data.
 
 ## Current Behavior
 - `TriggerEngine` currently evaluates `allowedInputServers`, configurable mention aliases, and question relevance gates.
@@ -50,8 +50,8 @@
 - Proactive persona chat can be triggered from Magnus player-list heartbeats for join bursts and servers becoming active.
 
 ## Gaps And Gotchas
-- `ActionRegistry` exists, but no actions/tools are wired into runtime yet.
-- `actions.enabled` only produces a warning today.
+- `ActionRegistry` registers local read-only actions when persona `actions.enabled` is true.
+- Built-in actions cover online players, server population, player lookup, world time, weather, and server status.
 - `style.roleplay` still exists in schema/types but is currently unused by runtime.
 - There is no end-to-end coverage for `main.ts`, live Redis integration, or real LLM calls.
 

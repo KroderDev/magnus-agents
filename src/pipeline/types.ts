@@ -8,7 +8,7 @@ import type { MessageMemory } from "../runtime/memory.js";
 import type { CooldownTracker } from "../runtime/cooldowns.js";
 import type { LoopGuard } from "../runtime/loop-guard.js";
 import type { ActionRegistry } from "../actions/registry.js";
-import type { AgentAction } from "../actions/types.js";
+import type { ActionRequest, ActionResult, AgentAction } from "../actions/types.js";
 
 export type AgentRoute = "ignore" | "reply" | "action";
 export type PipelineSignal = "continue" | "stop";
@@ -25,6 +25,8 @@ export interface ChatPipelineState {
   trigger?: TriggerResult;
   contextMessages?: LlmMessage[];
   toolCandidates?: AgentAction[];
+  actionRequest?: ActionRequest;
+  actionResult?: ActionResult;
   draftText?: string;
   finalText?: string;
   publishListeners?: number;

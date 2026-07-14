@@ -34,6 +34,7 @@ describe("persona config schema", () => {
           enabled: true,
           requireMention: true,
           useSemanticRelevance: false,
+          helpKeywords: ["ayuda"],
         },
         mention: {
           enabled: true,
@@ -45,6 +46,45 @@ describe("persona config schema", () => {
     expect(result.triggers.question.enabled).toBe(true);
     expect(result.triggers.question.requireMention).toBe(true);
     expect(result.triggers.question.useSemanticRelevance).toBe(false);
+    expect(result.triggers.question.helpKeywords).toEqual(["ayuda"]);
+    expect(result.triggers.question.helpSignals).toEqual([{ pattern: "ayuda", match: "includes", priority: 0 }]);
     expect(result.triggers.mention.aliases).toEqual(["profe"]);
+  });
+
+  it("parses explicit help signals with regex and priority", () => {
+    const result = personaConfigSchema.parse({
+      ...baseConfig,
+      triggers: {
+        question: {
+          enabled: true,
+          helpSignals: [
+            { pattern: "ayuda", priority: 2 },
+            { pattern: "(no se|no sé).*(salir|entrar|ir)", match: "regex", priority: 4 },
+          ],
+        },
+      },
+    });
+
+    expect(result.triggers.question.helpSignals).toEqual([
+      { pattern: "ayuda", match: "includes", priority: 2 },
+      { pattern: "(no se|no sé).*(salir|entrar|ir)", match: "regex", priority: 4 },
+    ]);
+  });
+
+  it("fills action policy defaults", () => {
+    const result = personaConfigSchema.parse({
+      ...baseConfig,
+      actions: {
+        enabled: true,
+      },
+    });
+
+    expect(result.actions).toEqual({
+      enabled: true,
+      allowed: ["*"],
+      mode: "auto",
+      maxCallsPerMessage: 1,
+      readOnlyOnly: true,
+    });
   });
 });

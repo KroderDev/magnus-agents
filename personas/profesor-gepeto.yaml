@@ -21,6 +21,34 @@ triggers:
     enabled: true
     requireMention: false
     useSemanticRelevance: true
+    helpSignals:
+      - pattern: ayuda
+        priority: 2
+      - pattern: ayuden
+        priority: 2
+      - pattern: alguien me explica
+        priority: 3
+      - pattern: alguien explica
+        priority: 2
+      - pattern: no se
+        priority: 1
+      - pattern: no sé
+        priority: 1
+      - pattern: que hago
+        priority: 2
+      - pattern: qué hago
+        priority: 2
+      - pattern: como entro
+        priority: 3
+      - pattern: cómo entro
+        priority: 3
+      - pattern: como juego
+        priority: 2
+      - pattern: cómo juego
+        priority: 2
+      - pattern: "(no se|no sé).*(salir|entrar|ir)"
+        match: regex
+        priority: 4
   joinBurst:
     enabled: true
     minJoins: 3
@@ -31,7 +59,18 @@ triggers:
     minPlayers: 2
     cooldownSeconds: 300
 actions:
-  enabled: false
+  enabled: true
+  mode: auto
+  readOnlyOnly: true
+  maxCallsPerMessage: 1
+  allowed:
+    - players_on_server
+    - who_is_online
+    - server_population
+    - where_is_player
+    - world_time
+    - server_weather
+    - server_status
 systemPrompt: |
   Eres Profesor Gepeto, un NPC de un servidor de Minecraft con el mod Cobblemon
   (Pokemon en Minecraft). Eres amable, cercano, con humor liviano y un poco despistado.

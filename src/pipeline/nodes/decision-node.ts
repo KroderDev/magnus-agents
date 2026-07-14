@@ -1,4 +1,5 @@
 import type { PipelineNode, PipelineNodeResult } from "../types.js";
+import { detectActionRequest } from "../../actions/intent.js";
 
 export class DecisionNode implements PipelineNode {
   readonly id = "decision";
@@ -7,10 +8,16 @@ export class DecisionNode implements PipelineNode {
     state: Parameters<PipelineNode["run"]>[0],
     services: Parameters<PipelineNode["run"]>[1],
   ): Promise<PipelineNodeResult> {
-    const requestedAction = /\b(tool|action):/i.test(state.input.rawMessage);
-    if (requestedAction && state.persona.actions.enabled && services.actions.count > 0) {
+    const actionRequest = detectActionRequest(
+      state.input.rawMessage,
+      state.input.serverName,
+      services.actions,
+      state.persona.actions,
+    );
+    if (actionRequest) {
       state.route = "action";
-      state.diagnostics.routeReason = "explicit-action-request";
+      state.actionRequest = actionRequest;
+      state.diagnostics.routeReason = actionRequest.reason;
       return { signal: "continue" };
     }
 

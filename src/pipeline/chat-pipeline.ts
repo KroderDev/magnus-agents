@@ -21,8 +21,8 @@ export class ChatPipeline {
     this.executor = new PipelineExecutor([
       new TriggerNode(new TriggerEngine(persona)),
       new GuardNode(),
-      new QuestionRelevanceNode(),
       new DecisionNode(),
+      new QuestionRelevanceNode(),
       new ContextNode(),
       new ToolPlanningNode(),
       new ActionRouteNode(),

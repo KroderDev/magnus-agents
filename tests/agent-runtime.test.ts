@@ -4,7 +4,7 @@ import type { PersonaConfig } from "../src/config/persona.js";
 import { AgentRuntime } from "../src/runtime/agent.js";
 import type { LlmProvider } from "../src/integrations/llm/types.js";
 import type { ChatPublisher } from "../src/integrations/magnus/chat-publisher.js";
-import type { ChatMessage, ServerPlayerInfo } from "../src/domain/types.js";
+import type { ChatMessage, ServerPlayerInfo, ServerStateInfo } from "../src/domain/types.js";
 import { ActionRegistry } from "../src/actions/registry.js";
 
 type PersonaOverrides = Partial<Omit<PersonaConfig, "triggers" | "cooldowns" | "memory" | "style" | "actions">> & {
@@ -37,6 +37,8 @@ const baseConfig: PersonaConfig = {
       enabled: true,
       requireMention: false,
       useSemanticRelevance: true,
+      helpKeywords: [],
+      helpSignals: [],
     },
     joinBurst: {
       enabled: false,
@@ -53,7 +55,7 @@ const baseConfig: PersonaConfig = {
   cooldowns: { globalSeconds: 20, playerSeconds: 60 },
   memory: { recentMessages: 12 },
   style: { maxChars: 40, roleplay: true },
-  actions: { enabled: false },
+  actions: { enabled: false, allowed: ["*"], mode: "auto", maxCallsPerMessage: 1, readOnlyOnly: true },
 };
 
 function createRuntime(overrides: PersonaOverrides = {}) {
@@ -118,6 +120,27 @@ function playerList(serverName: string, players: string[], timestamp = Date.now(
     serverName,
     timestamp,
     players: players.map((name, index) => ({ uuid: `${serverName}-${index}`, name })),
+  };
+}
+
+function serverState(overrides: Partial<ServerStateInfo> = {}): ServerStateInfo {
+  return {
+    serverName: "lobby",
+    playerCount: 2,
+    maxPlayers: 20,
+    timestamp: Date.now(),
+    worlds: [
+      {
+        dimension: "minecraft:overworld",
+        timeOfDay: 18000,
+        dayNumber: 4,
+        phase: "night",
+        isDay: false,
+        isRaining: false,
+        isThundering: false,
+      },
+    ],
+    ...overrides,
   };
 }
 
@@ -239,32 +262,39 @@ describe("AgentRuntime chat context", () => {
     ))).toBe(true);
   });
 
-  it("supports an alternate action route without drafting or publishing chat", async () => {
-    const { runtime, generate, publish, actions } = createRuntime({
+  it("uses server-state tools for action-backed replies", async () => {
+    const { runtime, generate, publish } = createRuntime({
       actions: { enabled: true },
+      style: { maxChars: 80 },
       triggers: {
         mention: { enabled: true },
         question: { enabled: false },
       },
     });
 
-    actions.register({
-      id: "who-is-online",
-      description: "Dummy action for pipeline route tests",
-      execute: async () => ({ success: true, output: "ok" }),
+    generate.mockResolvedValueOnce({
+      text: "Es de noche en lobby, ideal pa mirar feo a los mobs.",
     });
+    runtime.onServerState(serverState());
 
     runtime.onChat(chatMessage({
       playerUuid: "uuid-9",
       playerName: "Gary",
-      rawMessage: "Test Persona action: revisa quien esta online",
+      rawMessage: "Test Persona, what time is it?",
       timestamp: 20,
     }));
 
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
 
-    expect(generate).not.toHaveBeenCalled();
-    expect(publish).not.toHaveBeenCalled();
+    expect(generate.mock.calls[0]?.[0].messages.at(-1)?.content).toContain('"action":"world_time"');
+    expect(generate.mock.calls[0]?.[0].messages.at(-1)?.content).toContain("night");
+    expect(publish).toHaveBeenCalledWith({
+      personaId: baseConfig.id,
+      displayName: baseConfig.displayName,
+      rawMessage: "Es de noche en lobby, ideal pa mirar feo a los mobs.",
+      targetServers: ["lobby"],
+    });
   });
 
   it("runs semantic relevance checks for non-mentioned questions before replying", async () => {

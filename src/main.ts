@@ -8,10 +8,11 @@ import { MessageSigner } from "./integrations/magnus/signer.js";
 import { ChatPublisher } from "./integrations/magnus/chat-publisher.js";
 import { ChatSubscriber } from "./integrations/magnus/chat-subscriber.js";
 import { PlayerListSubscriber } from "./integrations/magnus/playerlist-subscriber.js";
+import { ServerStateSubscriber } from "./integrations/magnus/serverstate-subscriber.js";
 import { OpenAICompatibleProvider as LlmProvider } from "./integrations/llm/openai-provider.js";
 import { AgentRuntime } from "./runtime/agent.js";
 import { ActionRegistry } from "./actions/registry.js";
-import { MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL } from "./integrations/magnus/protocol.js";
+import { MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL, MAGNUS_SERVERSTATE_CHANNEL } from "./integrations/magnus/protocol.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,13 +75,13 @@ async function main(): Promise<void> {
     signer,
     log.child({ component: "playerlist-subscriber" }),
   );
+  const serverStateSub = new ServerStateSubscriber(redis, signer, log.child({ component: "serverstate-subscriber" }));
 
   const actionRegistry = new ActionRegistry();
-  if (config.actions.enabled) {
-    log.warn("actions enabled in config but no actions registered (actions system is not yet implemented)");
-  }
-
   const agent = new AgentRuntime(config, llm, publisher, actionRegistry, log);
+  if (config.actions.enabled && actionRegistry.count === 0) {
+    log.warn("actions enabled in config but no actions registered");
+  }
 
   log.info({ channel: MAGNUS_CHAT_CHANNEL }, "subscribing to magnus chat");
   await chatSub.subscribe((msg) => {
@@ -92,6 +93,11 @@ async function main(): Promise<void> {
     agent.onPlayerList(info);
   });
 
+  log.info({ channel: MAGNUS_SERVERSTATE_CHANNEL }, "subscribing to magnus server state");
+  await serverStateSub.subscribe((info) => {
+    agent.onServerState(info);
+  });
+
   const closeHealth = startHealthServer(env.HEALTH_PORT, log);
   log.info({ healthPort: env.HEALTH_PORT }, "health server started");
 
@@ -100,6 +106,7 @@ async function main(): Promise<void> {
     closeHealth();
     await chatSub.unsubscribe();
     await playerListSub.unsubscribe();
+    await serverStateSub.unsubscribe();
     redis.close();
     process.exit(0);
   };
@@ -111,7 +118,7 @@ async function main(): Promise<void> {
     {
       actions: actionRegistry.count,
       triggers: config.triggers,
-      subscribedChannels: [MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL],
+      subscribedChannels: [MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL, MAGNUS_SERVERSTATE_CHANNEL],
       healthPort: env.HEALTH_PORT,
       logLevel: env.LOG_LEVEL,
     },
