@@ -9,6 +9,13 @@ export interface TriggerResult {
 }
 
 const QUESTION_MARKERS = /[?¿]/;
+
+const INTERROGATIVE_PATTERNS = [
+  /\balguien\s+sabe\b/i,
+  /^\s*(como|cómo|donde|dónde|cuando|cuándo|cual|cuál|quien|quién|por\s+que|por\s+qué)\b/i,
+  /\b(se\s+puede|me\s+pueden|me\s+podri[ae]n|saben\s+si)\b/i,
+];
+
 export class TriggerEngine {
   private readonly triggers: PersonaConfig["triggers"];
   private readonly personaId: string;
@@ -27,7 +34,9 @@ export class TriggerEngine {
       return null;
     }
 
-    if (this.triggers.onMention && this.isDirectMention(msg.rawMessage)) {
+    const isMention = this.triggers.mention.enabled && this.isDirectMention(msg.rawMessage);
+
+    if (isMention) {
       return {
         shouldRespond: true,
         reason: "mention",
@@ -36,16 +45,42 @@ export class TriggerEngine {
       };
     }
 
-    if (this.triggers.onQuestion && this.hasQuestionMarker(msg.rawMessage)) {
+    const matchedHelpSignal = this.matchHelpSignal(msg.rawMessage);
+    const isHelpRequest = Boolean(matchedHelpSignal);
+    const isQuestion = this.looksLikeQuestion(msg.rawMessage);
+
+    if (!this.triggers.question.enabled || (!isQuestion && !isHelpRequest)) {
+      return null;
+    }
+
+    if (this.triggers.question.requireMention && !isMention) {
+      return null;
+    }
+
+    if (isHelpRequest) {
       return {
         shouldRespond: true,
-        reason: "question",
+        reason: isMention ? "help-to-persona" : "help-request",
         targetUuid: msg.playerUuid,
         targetServer: msg.serverName,
       };
     }
 
-    return null;
+    if (isMention || !this.triggers.question.useSemanticRelevance) {
+      return {
+        shouldRespond: true,
+        reason: isMention ? "question-to-persona" : "question",
+        targetUuid: msg.playerUuid,
+        targetServer: msg.serverName,
+      };
+    }
+
+    return {
+      shouldRespond: true,
+      reason: "question-candidate",
+      targetUuid: msg.playerUuid,
+      targetServer: msg.serverName,
+    };
   }
 
   private isServerAllowed(server: string): boolean {
@@ -56,9 +91,13 @@ export class TriggerEngine {
   private isDirectMention(text: string): boolean {
     const lower = text.toLowerCase();
     const nameLower = this.displayName.toLowerCase();
-    const terms = [nameLower, this.personaId, "profe"];
+    const terms = [nameLower, this.personaId, ...this.triggers.mention.aliases.map((alias) => alias.toLowerCase())];
 
     for (const term of terms) {
+      if (!term) {
+        continue;
+      }
+
       if (lower.includes(term)) return true;
       if (lower.startsWith(`@${term}`)) return true;
     }
@@ -66,7 +105,40 @@ export class TriggerEngine {
     return false;
   }
 
-  private hasQuestionMarker(text: string): boolean {
-    return QUESTION_MARKERS.test(text);
+  private looksLikeQuestion(text: string): boolean {
+    if (QUESTION_MARKERS.test(text)) {
+      return true;
+    }
+
+    return INTERROGATIVE_PATTERNS.some((pattern) => pattern.test(text));
+  }
+
+  private matchHelpSignal(text: string): { pattern: string; match: "includes" | "regex"; priority: number } | null {
+    const lower = text.toLowerCase();
+    let bestMatch: { pattern: string; match: "includes" | "regex"; priority: number } | null = null;
+
+    for (const signal of this.triggers.question.helpSignals) {
+      const isMatch = signal.match === "regex"
+        ? this.matchesRegex(signal.pattern, text)
+        : lower.includes(signal.pattern.toLowerCase());
+
+      if (!isMatch) {
+        continue;
+      }
+
+      if (!bestMatch || signal.priority > bestMatch.priority) {
+        bestMatch = signal;
+      }
+    }
+
+    return bestMatch;
+  }
+
+  private matchesRegex(pattern: string, text: string): boolean {
+    try {
+      return new RegExp(pattern, "i").test(text);
+    } catch {
+      return false;
+    }
   }
 }

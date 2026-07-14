@@ -2,6 +2,74 @@ import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { parse as parseYaml } from "yaml";
 
+const helpSignalSchema = z.object({
+  pattern: z.string().min(1),
+  match: z.enum(["includes", "regex"]).default("includes"),
+  priority: z.number().int().default(0),
+});
+
+const modernTriggerConfigSchema = z.object({
+  mention: z.object({
+    enabled: z.boolean().default(true),
+    aliases: z.array(z.string().min(1)).default([]),
+  }).default({ enabled: true, aliases: [] }),
+  question: z.object({
+    enabled: z.boolean().default(false),
+    requireMention: z.boolean().default(false),
+    useSemanticRelevance: z.boolean().default(true),
+    helpKeywords: z.array(z.string().min(1)).default([]),
+    helpSignals: z.array(helpSignalSchema).default([]),
+  }).default({ enabled: false, requireMention: false, useSemanticRelevance: true, helpKeywords: [], helpSignals: [] }),
+  joinBurst: z.object({
+    enabled: z.boolean().default(false),
+    minJoins: z.number().int().positive().default(3),
+    windowSeconds: z.number().positive().default(20),
+    cooldownSeconds: z.number().positive().default(180),
+  }).default({ enabled: false, minJoins: 3, windowSeconds: 20, cooldownSeconds: 180 }),
+  serverBecomesActive: z.object({
+    enabled: z.boolean().default(false),
+    minPlayers: z.number().int().positive().default(2),
+    cooldownSeconds: z.number().positive().default(300),
+  }).default({ enabled: false, minPlayers: 2, cooldownSeconds: 300 }),
+});
+
+const triggerConfigSchema = z.preprocess((raw) => {
+  if (!raw || typeof raw !== "object") {
+    return raw;
+  }
+
+  const input = raw as {
+    mention?: { enabled?: boolean; aliases?: string[] };
+    question?: {
+      enabled?: boolean;
+      requireMention?: boolean;
+      useSemanticRelevance?: boolean;
+      helpKeywords?: string[];
+      helpSignals?: Array<{ pattern: string; match?: "includes" | "regex"; priority?: number }>;
+    };
+    joinBurst?: { enabled?: boolean; minJoins?: number; windowSeconds?: number; cooldownSeconds?: number };
+    serverBecomesActive?: { enabled?: boolean; minPlayers?: number; cooldownSeconds?: number };
+    onMention?: boolean;
+    onQuestion?: boolean;
+    onJoinBurst?: boolean;
+  };
+
+  return {
+    ...input,
+    mention: input.mention ?? (input.onMention !== undefined ? { enabled: input.onMention } : undefined),
+    question: input.question ?? (input.onQuestion !== undefined ? { enabled: input.onQuestion } : undefined),
+    joinBurst: input.joinBurst ?? (input.onJoinBurst !== undefined ? { enabled: input.onJoinBurst } : undefined),
+  };
+}, modernTriggerConfigSchema).transform((triggers) => ({
+  ...triggers,
+  question: {
+    ...triggers.question,
+    helpSignals: triggers.question.helpSignals.length > 0
+      ? triggers.question.helpSignals
+      : triggers.question.helpKeywords.map((pattern) => ({ pattern, match: "includes" as const, priority: 0 })),
+  },
+}));
+
 export const personaConfigSchema = z.object({
   id: z.string().min(1).regex(/^[a-z0-9_-]+$/, "id must be lowercase alphanumeric with hyphens or underscores"),
   displayName: z.string().min(1),
@@ -30,14 +98,14 @@ export const personaConfigSchema = z.object({
     maxChars: z.number().positive().default(180),
     roleplay: z.boolean().default(true),
   }).default({ maxChars: 180, roleplay: true }),
-  triggers: z.object({
-    onMention: z.boolean().default(true),
-    onQuestion: z.boolean().default(false),
-    onJoinBurst: z.boolean().default(false),
-  }).default({ onMention: true }),
+  triggers: triggerConfigSchema.default({}),
   actions: z.object({
     enabled: z.boolean().default(false),
-  }).default({ enabled: false }),
+    allowed: z.array(z.string().min(1)).default(["*"]),
+    mode: z.enum(["off", "auto", "explicit"]).default("auto"),
+    maxCallsPerMessage: z.number().int().positive().default(1),
+    readOnlyOnly: z.boolean().default(true),
+  }).default({ enabled: false, allowed: ["*"], mode: "auto", maxCallsPerMessage: 1, readOnlyOnly: true }),
 });
 
 export type PersonaConfig = z.infer<typeof personaConfigSchema>;

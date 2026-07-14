@@ -9,9 +9,28 @@ const baseConfig: PersonaConfig = {
   systemPrompt: "You are a test.",
   allowedInputServers: ["*"],
   triggers: {
-    onMention: true,
-    onQuestion: true,
-    onJoinBurst: false,
+    mention: {
+      enabled: true,
+      aliases: [],
+    },
+    question: {
+      enabled: true,
+      requireMention: false,
+      useSemanticRelevance: true,
+      helpKeywords: [],
+      helpSignals: [],
+    },
+    joinBurst: {
+      enabled: false,
+      minJoins: 3,
+      windowSeconds: 20,
+      cooldownSeconds: 180,
+    },
+    serverBecomesActive: {
+      enabled: false,
+      minPlayers: 2,
+      cooldownSeconds: 300,
+    },
   },
   cooldowns: { globalSeconds: 20, playerSeconds: 60 },
   memory: { recentMessages: 12 },
@@ -46,12 +65,71 @@ describe("TriggerEngine", () => {
   it("should trigger on question", () => {
     const config: PersonaConfig = {
       ...baseConfig,
-      triggers: { ...baseConfig.triggers, onMention: false, onQuestion: true },
+      triggers: {
+        ...baseConfig.triggers,
+        mention: { ...baseConfig.triggers.mention, enabled: false },
+        question: { ...baseConfig.triggers.question, enabled: true, useSemanticRelevance: false },
+      },
     };
     const engine = new TriggerEngine(config);
-    const result = engine.evaluate(msg("Alguien sabe donde esta el spawn?"));
+    const result = engine.evaluate(msg("Alguien sabe donde esta el spawn"));
     expect(result?.shouldRespond).toBe(true);
     expect(result?.reason).toBe("question");
+  });
+
+  it("should trigger on configured alias mention", () => {
+    const config: PersonaConfig = {
+      ...baseConfig,
+      triggers: {
+        ...baseConfig.triggers,
+        mention: { enabled: true, aliases: ["profe"] },
+      },
+    };
+
+    const engine = new TriggerEngine(config);
+    expect(engine.evaluate(msg("oye profe, cachai donde esta el gimnasio?"))?.reason).toBe("mention");
+  });
+
+  it("should mark non-mentioned questions as question candidates when semantic relevance is enabled", () => {
+    const engine = new TriggerEngine(baseConfig);
+    expect(engine.evaluate(msg("alguien sabe donde pillar hierro"))?.reason).toBe("question-candidate");
+  });
+
+  it("should trigger on configured help keywords without a direct mention", () => {
+    const config: PersonaConfig = {
+      ...baseConfig,
+      triggers: {
+        ...baseConfig.triggers,
+        question: {
+          ...baseConfig.triggers.question,
+          helpSignals: [
+            { pattern: "ayuda", match: "includes", priority: 1 },
+            { pattern: "como entro", match: "includes", priority: 2 },
+          ],
+        },
+      },
+    };
+
+    const engine = new TriggerEngine(config);
+    expect(engine.evaluate(msg("como entro a kanto? ayuda"))?.reason).toBe("help-request");
+  });
+
+  it("should support regex help signals", () => {
+    const config: PersonaConfig = {
+      ...baseConfig,
+      triggers: {
+        ...baseConfig.triggers,
+        question: {
+          ...baseConfig.triggers.question,
+          helpSignals: [
+            { pattern: "(no se|no sé).*(salir|entrar|ir)", match: "regex", priority: 4 },
+          ],
+        },
+      },
+    };
+
+    const engine = new TriggerEngine(config);
+    expect(engine.evaluate(msg("no se salir del lobby"))?.reason).toBe("help-request");
   });
 
   it("should not trigger on regular chat", () => {
@@ -73,7 +151,11 @@ describe("TriggerEngine", () => {
   it("should not trigger with both disabled", () => {
     const config: PersonaConfig = {
       ...baseConfig,
-      triggers: { onMention: false, onQuestion: false },
+      triggers: {
+        ...baseConfig.triggers,
+        mention: { ...baseConfig.triggers.mention, enabled: false },
+        question: { ...baseConfig.triggers.question, enabled: false },
+      },
     };
     const engine = new TriggerEngine(config);
     expect(engine.evaluate(msg("Test Persona help"))).toBeNull();

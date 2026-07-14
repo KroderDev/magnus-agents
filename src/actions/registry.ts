@@ -19,7 +19,26 @@ export class ActionRegistry {
     if (!action) {
       return { success: false, error: `Unknown action: ${id}` };
     }
-    return action.execute(input, ctx);
+
+    if (!action.timeoutMs) {
+      return action.execute(input, ctx);
+    }
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        action.execute(input, ctx),
+        new Promise<ActionResult>((resolve) => {
+          timeout = setTimeout(() => {
+            resolve({ success: false, error: `Action timed out after ${action.timeoutMs}ms` });
+          }, action.timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }
   }
 
   list(): AgentAction[] {

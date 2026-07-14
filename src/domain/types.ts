@@ -4,6 +4,7 @@ export interface ChatMessage {
   playerName: string;
   rawMessage: string;
   timestamp: number;
+  targetServers?: string[];
 }
 
 export interface PlayerEntry {
@@ -14,6 +15,24 @@ export interface PlayerEntry {
 export interface ServerPlayerInfo {
   serverName: string;
   players: PlayerEntry[];
+  timestamp: number;
+}
+
+export interface WorldStateInfo {
+  dimension: string;
+  timeOfDay: number;
+  dayNumber: number;
+  phase: string;
+  isDay: boolean;
+  isRaining: boolean;
+  isThundering: boolean;
+}
+
+export interface ServerStateInfo {
+  serverName: string;
+  playerCount: number;
+  maxPlayers: number;
+  worlds: WorldStateInfo[];
   timestamp: number;
 }
 

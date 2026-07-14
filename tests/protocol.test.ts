@@ -3,6 +3,7 @@ import {
   decodeChatMessage,
   encodeChatMessage,
   decodePlayerList,
+  decodeServerState,
   buildChatMessage,
   isPersonaMessage,
 } from "../src/integrations/magnus/protocol.js";
@@ -50,11 +51,37 @@ describe("Magnus protocol", () => {
     expect(info!.players[0].name).toBe("Alice");
   });
 
+  it("should decode server state", () => {
+    const raw = JSON.stringify({
+      serverName: "lobby",
+      playerCount: 2,
+      maxPlayers: 20,
+      worlds: [
+        {
+          dimension: "minecraft:overworld",
+          timeOfDay: 18000,
+          dayNumber: 4,
+          phase: "night",
+          isDay: false,
+          isRaining: false,
+          isThundering: false,
+        },
+      ],
+      timestamp: 1700000000000,
+    });
+
+    const info = decodeServerState(raw);
+    expect(info).not.toBeNull();
+    expect(info!.serverName).toBe("lobby");
+    expect(info!.worlds[0].phase).toBe("night");
+  });
+
   it("should build persona chat messages", () => {
     const persona: PersonaMessage = {
       personaId: "profesor-gepeto",
       displayName: "Profesor Gepeto",
       rawMessage: "Hola entrenadores!",
+      targetServers: ["lobby"],
     };
 
     const msg = buildChatMessage(persona, "agent:profesor-gepeto");
@@ -62,6 +89,7 @@ describe("Magnus protocol", () => {
     expect(msg.playerUuid).toBe("persona:profesor-gepeto");
     expect(msg.playerName).toBe("Profesor Gepeto");
     expect(msg.rawMessage).toBe("Hola entrenadores!");
+    expect(msg.targetServers).toEqual(["lobby"]);
   });
 
   it("should detect persona messages", () => {
