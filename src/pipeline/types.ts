@@ -9,6 +9,7 @@ import type { CooldownTracker } from "../runtime/cooldowns.js";
 import type { LoopGuard } from "../runtime/loop-guard.js";
 import type { ActionRegistry } from "../actions/registry.js";
 import type { ActionRequest, ActionResult, AgentAction } from "../actions/types.js";
+import type { KnowledgeBase } from "../runtime/knowledge-base.js";
 
 export type AgentRoute = "ignore" | "reply" | "action";
 export type PipelineSignal = "continue" | "stop";
@@ -47,6 +48,7 @@ export interface ChatPipelineServices {
   cooldowns: CooldownTracker;
   loopGuard: LoopGuard;
   actions: ActionRegistry;
+  knowledge?: KnowledgeBase;
   normalizeText(text: string, maxChars: number): string;
 }
 

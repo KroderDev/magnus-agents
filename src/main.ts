@@ -13,6 +13,7 @@ import { OpenAICompatibleProvider as LlmProvider } from "./integrations/llm/open
 import { AgentRuntime } from "./runtime/agent.js";
 import { ActionRegistry } from "./actions/registry.js";
 import { MAGNUS_CHAT_CHANNEL, MAGNUS_PLAYERLIST_CHANNEL, MAGNUS_SERVERSTATE_CHANNEL } from "./integrations/magnus/protocol.js";
+import { KnowledgeBase } from "./runtime/knowledge-base.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,11 +79,18 @@ async function main(): Promise<void> {
   const serverStateSub = new ServerStateSubscriber(redis, signer, log.child({ component: "serverstate-subscriber" }));
 
   const actionRegistry = new ActionRegistry();
-  const agent = new AgentRuntime(config, llm, publisher, actionRegistry, log);
+  const knowledge = config.knowledge.enabled && config.knowledge.path
+    ? KnowledgeBase.load(config.knowledge.path, {
+        maxResults: config.knowledge.maxResults,
+        maxContextChars: config.knowledge.maxContextChars,
+      })
+    : undefined;
+  if (knowledge) log.info({ entries: knowledge.size }, "loaded agent knowledge");
+
+  const agent = new AgentRuntime(config, llm, publisher, actionRegistry, log, knowledge);
   if (config.actions.enabled && actionRegistry.count === 0) {
     log.warn("actions enabled in config but no actions registered");
   }
-
   log.info({ channel: MAGNUS_CHAT_CHANNEL }, "subscribing to magnus chat");
   await chatSub.subscribe((msg) => {
     agent.onChat(msg);

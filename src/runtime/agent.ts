@@ -10,6 +10,7 @@ import type { Logger } from "pino";
 import type { ActionRegistry } from "../actions/registry.js";
 import { registerBuiltinActions } from "../actions/builtin.js";
 import { ChatPipeline } from "../pipeline/chat-pipeline.js";
+import type { KnowledgeBase } from "./knowledge-base.js";
 
 interface ProactiveTrigger {
   reason: "join-burst" | "server-became-active";
@@ -39,6 +40,7 @@ export class AgentRuntime {
     publisher: ChatPublisher,
     actions: ActionRegistry,
     log: Logger,
+    knowledge?: KnowledgeBase,
   ) {
     this.config = config;
     this.llm = llm;
@@ -62,6 +64,7 @@ export class AgentRuntime {
       cooldowns: this.cooldowns,
       loopGuard: this.loopGuard,
       actions,
+      knowledge,
       normalizeText: (text, maxChars) => this.normalizeGeneratedText(text, maxChars),
     });
   }

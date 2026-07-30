@@ -6,6 +6,10 @@ import type { LlmProvider } from "../src/integrations/llm/types.js";
 import type { ChatPublisher } from "../src/integrations/magnus/chat-publisher.js";
 import type { ChatMessage, ServerPlayerInfo, ServerStateInfo } from "../src/domain/types.js";
 import { ActionRegistry } from "../src/actions/registry.js";
+import { KnowledgeBase } from "../src/runtime/knowledge-base.js";
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 type PersonaOverrides = Partial<Omit<PersonaConfig, "triggers" | "cooldowns" | "memory" | "style" | "actions">> & {
   triggers?: Partial<{
@@ -54,11 +58,12 @@ const baseConfig: PersonaConfig = {
   },
   cooldowns: { globalSeconds: 20, playerSeconds: 60 },
   memory: { recentMessages: 12 },
+  knowledge: { enabled: false, maxResults: 3, maxContextChars: 4000 },
   style: { maxChars: 40, roleplay: true },
   actions: { enabled: false, allowed: ["*"], mode: "auto", maxCallsPerMessage: 1, readOnlyOnly: true },
 };
 
-function createRuntime(overrides: PersonaOverrides = {}) {
+function createRuntime(overrides: PersonaOverrides = {}, knowledge?: KnowledgeBase) {
   const generate = vi.fn<LlmProvider["generate"]>().mockResolvedValue({
     text: "Saludos, cabros curiosos, ya llego el profe a meter ruido en el server.",
   });
@@ -99,6 +104,7 @@ function createRuntime(overrides: PersonaOverrides = {}) {
     { publish } as unknown as ChatPublisher,
     actions,
     pino({ enabled: false }),
+    knowledge,
   );
 
   return { runtime, generate, publish, actions };
@@ -380,5 +386,28 @@ describe("AgentRuntime chat context", () => {
       rawMessage: "Saludos, cabros curiosos, ya llego el",
       targetServers: ["kanto"],
     });
+  });
+
+  it("injects matching generic knowledge through the chat pipeline", async () => {
+    const path = join(tmpdir(), `runtime-knowledge-${process.pid}.json`);
+    writeFileSync(path, JSON.stringify({
+      entries: [{
+        id: "moon-garden",
+        aliases: ["lunar garden"],
+        content: "The garden opens after sunset.",
+      }],
+    }));
+    const knowledge = KnowledgeBase.load(path, { maxResults: 3, maxContextChars: 1000 });
+    const { runtime, generate } = createRuntime({
+      triggers: { question: { enabled: false } },
+    }, knowledge);
+
+    runtime.onChat(chatMessage({ rawMessage: "Test Persona, where is the lunar garden?" }));
+
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+    expect(generate.mock.calls[0]?.[0].messages).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("The garden opens after sunset."),
+    }));
   });
 });
